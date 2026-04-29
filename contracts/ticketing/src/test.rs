@@ -146,7 +146,6 @@ fn test_check_in_valid_and_duplicate() {
     let client = TicketingContractClient::new(&env, &contract_id);
 
     let organizer = Address::generate(&env);
-    let operator = Address::generate(&env);
     let holder = Address::generate(&env);
 
     let event_id = client.create_event(
@@ -162,7 +161,7 @@ fn test_check_in_valid_and_duplicate() {
     let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &qr_hash);
 
     // First check-in should succeed
-    client.check_in(&operator, &ticket_id);
+    client.check_in(&organizer, ticket_id);
 
     let ticket = client.get_ticket(&ticket_id);
     assert!(ticket.checked_in);
@@ -170,7 +169,7 @@ fn test_check_in_valid_and_duplicate() {
 
     // Duplicate check-in should fail
     let result = std::panic::catch_unwind(|| {
-        client.check_in(&operator, &ticket_id);
+        client.check_in(&organizer, ticket_id);
     });
     assert!(result.is_err());
 
@@ -179,7 +178,7 @@ fn test_check_in_valid_and_duplicate() {
     assert!(check_in_record.is_some());
     let record = check_in_record.unwrap();
     assert_eq!(record.ticket_id, ticket_id);
-    assert_eq!(record.checked_in_by, operator);
+    assert_eq!(record.checked_in_by, organizer);
 }
 
 #[test]
@@ -204,13 +203,16 @@ fn test_check_in_with_wrong_operator() {
     let qr_hash = test_qr_hash(&env, 10);
     let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &qr_hash);
 
-    // Only authorized operator can check in
+    // Only the event organizer can check in
     env.with_auth(&operator1, || {
         let result = std::panic::catch_unwind(|| {
             client.check_in(&operator1, &ticket_id);
         });
-        assert!(result.is_err()); // should fail because operator not authorized
+        assert!(result.is_err()); // should fail because caller is not organizer
     });
+
+    // Organizer check-in succeeds.
+    client.check_in(&organizer, ticket_id);
 }
 
 #[test]
@@ -243,8 +245,7 @@ fn test_ticket_transfer() {
     assert_eq!(ticket.holder, holder2);
 
     // Transfer already checked-in ticket should fail
-    let operator = Address::generate(&env);
-    client.check_in(&operator, &ticket_id);
+    client.check_in(&organizer, ticket_id);
 
     let result = std::panic::catch_unwind(|| {
         client.transfer_ticket(&holder2, &ticket_id, &holder1);
@@ -370,7 +371,6 @@ fn test_check_in_counters() {
     let client = TicketingContractClient::new(&env, &contract_id);
 
     let organizer = Address::generate(&env);
-    let operator = Address::generate(&env);
     let holder1 = Address::generate(&env);
     let holder2 = Address::generate(&env);
 
@@ -392,11 +392,11 @@ fn test_check_in_counters() {
     assert_eq!(client.get_event_ticket_count(&event_id), 2);
     assert_eq!(client.get_event_checked_in_count(&event_id), 0);
 
-    client.check_in(&operator, &ticket_id1);
-    assert_eq!(client.get_event_checked_in_count(&event_id), 1);
+    client.check_in(&organizer, ticket_id1);
+    assert_eq!(client.get_event_checked_in_count(event_id), 1);
 
-    client.check_in(&operator, &ticket_id2);
-    assert_eq!(client.get_event_checked_in_count(&event_id), 2);
+    client.check_in(&organizer, ticket_id2);
+    assert_eq!(client.get_event_checked_in_count(event_id), 2);
 }
 
 #[test]
@@ -451,7 +451,6 @@ fn test_verify_after_check_in() {
     let client = TicketingContractClient::new(&env, &contract_id);
 
     let organizer = Address::generate(&env);
-    let operator = Address::generate(&env);
     let holder = Address::generate(&env);
 
     let event_id = client.create_event(
@@ -472,7 +471,7 @@ fn test_verify_after_check_in() {
     assert!(!v1.already_checked_in);
 
     // Check in
-    client.check_in(&operator, &ticket_id);
+    client.check_in(&organizer, ticket_id);
 
     // Verify after check-in
     let v2 = client.verify_ticket(&ticket_id, &qr_hash);
@@ -504,65 +503,71 @@ fn test_ticket_not_found() {
     assert!(result.is_err());
 }
 
-// ── Waitlist Tests ─────────────────────────────────────────────────────────────
-
-/// Happy path: fill event → join waitlist → refund a ticket → waitlisted user
-/// auto-receives a new ticket and is removed from the queue.
 #[test]
-fn test_waitlist_join_and_auto_assign() {
+fn test_cancel_event() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(TicketingContract, ());
     let client = TicketingContractClient::new(&env, &contract_id);
 
     let organizer = Address::generate(&env);
-    let holder1 = Address::generate(&env);
-    let holder2 = Address::generate(&env);
-    let waiter = Address::generate(&env);
+    let name = String::from_str(&env, "Test Event");
+    let description = String::from_str(&env, "Test Description");
+    let start_time = 1_750_000_000;
+    let end_time = 1_750_000_600;
 
-    // Create event with capacity 2
     let event_id = client.create_event(
         &organizer,
-        &String::from_str(&env, "Sold-Out Gig"),
-        &String::from_str(&env, "Tiny venue"),
-        1000,
-        2000,
-        &Some(2),
+        &name,
+        &description,
+        start_time,
+        end_time,
+        None,
     );
 
-    // Fill the event
-    client.issue_ticket(&organizer, &event_id, &holder1, &test_qr_hash(&env, 1));
-    let ticket_id2 = client.issue_ticket(&organizer, &event_id, &holder2, &test_qr_hash(&env, 2));
+    // Verify event is initially active
+    let event = client.get_event(event_id);
+    assert_eq!(event.state, EventState::Active);
 
-    // Confirm it's full
-    assert_eq!(client.get_event_ticket_count(&event_id), 2);
+    // Cancel the event
+    client.cancel_event(&organizer, event_id);
 
-    // Join waitlist
-    let position = client.join_waitlist(&event_id, &waiter);
-    assert_eq!(position, 1);
-
-    let waitlist = client.get_waitlist(&event_id);
-    assert_eq!(waitlist.len(), 1);
-    assert_eq!(waitlist.get(0).unwrap().applicant, waiter);
-
-    // holder2 refunds their ticket
-    client.refund_ticket(&holder2, &ticket_id2);
-
-    // Capacity should still be 2 because waiter got auto-assigned
-    assert_eq!(client.get_event_ticket_count(&event_id), 2);
-
-    // Waitlist should now be empty
-    let waitlist_after = client.get_waitlist(&event_id);
-    assert_eq!(waitlist_after.len(), 0);
-
-    // The refunded ticket should be marked refunded
-    let refunded = client.get_ticket(&ticket_id2);
-    assert!(refunded.refunded);
+    // Verify event is now cancelled
+    let event = client.get_event(event_id);
+    assert_eq!(event.state, EventState::Cancelled);
 }
 
-/// Multiple waiters maintain FIFO order; the first joiner is assigned first.
 #[test]
-fn test_waitlist_fifo_order() {
+#[should_panic(expected = "TicketingError")]
+fn test_cancel_event_not_authorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(TicketingContract, ());
+    let client = TicketingContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let unauthorized_user = Address::generate(&env);
+    let name = String::from_str(&env, "Test Event");
+    let description = String::from_str(&env, "Test Description");
+    let start_time = 1_750_000_000;
+    let end_time = 1_750_000_600;
+
+    let event_id = client.create_event(
+        &organizer,
+        &name,
+        &description,
+        start_time,
+        end_time,
+        None,
+    );
+
+    // Try to cancel event with unauthorized user
+    client.cancel_event(&unauthorized_user, event_id);
+}
+
+#[test]
+#[should_panic(expected = "TicketingError")]
+fn test_issue_ticket_cancelled_event() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(TicketingContract, ());
@@ -570,206 +575,58 @@ fn test_waitlist_fifo_order() {
 
     let organizer = Address::generate(&env);
     let holder = Address::generate(&env);
-    let waiter1 = Address::generate(&env);
-    let waiter2 = Address::generate(&env);
+    let name = String::from_str(&env, "Test Event");
+    let description = String::from_str(&env, "Test Description");
+    let start_time = 1_750_000_000;
+    let end_time = 1_750_000_600;
 
     let event_id = client.create_event(
         &organizer,
-        &String::from_str(&env, "Full Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &Some(1),
+        &name,
+        &description,
+        start_time,
+        end_time,
+        None,
     );
 
-    let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &test_qr_hash(&env, 1));
+    // Cancel the event
+    client.cancel_event(&organizer, event_id);
 
-    // Two people join the waitlist
-    client.join_waitlist(&event_id, &waiter1);
-    client.join_waitlist(&event_id, &waiter2);
-
-    let waitlist = client.get_waitlist(&event_id);
-    assert_eq!(waitlist.len(), 2);
-    assert_eq!(waitlist.get(0).unwrap().applicant, waiter1); // FIFO: waiter1 first
-
-    // holder refunds: waiter1 (position 0) should get the ticket
-    client.refund_ticket(&holder, &ticket_id);
-
-    let waitlist_after = client.get_waitlist(&event_id);
-    assert_eq!(waitlist_after.len(), 1);
-    assert_eq!(waitlist_after.get(0).unwrap().applicant, waiter2); // waiter2 moves up
-
-    // Event still has exactly 1 active ticket (waiter1's new one)
-    assert_eq!(client.get_event_ticket_count(&event_id), 1);
+    // Try to issue ticket for cancelled event - should fail
+    client.issue_ticket(
+        &organizer,
+        event_id,
+        &holder,
+        &test_qr_hash(&env, 1),
+    );
 }
 
-/// join_waitlist called when event is not at capacity should panic.
 #[test]
 #[should_panic(expected = "TicketingError")]
-fn test_waitlist_join_not_full_panics() {
+fn test_cancel_already_cancelled_event() {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(TicketingContract, ());
     let client = TicketingContractClient::new(&env, &contract_id);
 
     let organizer = Address::generate(&env);
-    let waiter = Address::generate(&env);
+    let name = String::from_str(&env, "Test Event");
+    let description = String::from_str(&env, "Test Description");
+    let start_time = 1_750_000_000;
+    let end_time = 1_750_000_600;
 
     let event_id = client.create_event(
         &organizer,
-        &String::from_str(&env, "Half-Full Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &Some(5),
+        &name,
+        &description,
+        start_time,
+        end_time,
+        None,
     );
 
-    client.issue_ticket(&organizer, &event_id, &waiter, &test_qr_hash(&env, 1));
+    // Cancel the event
+    client.cancel_event(&organizer, event_id);
 
-    // Joining waitlist when event is not full should fail
-    client.join_waitlist(&event_id, &waiter);
-}
-
-/// Same address calling join_waitlist twice should panic with AlreadyOnWaitlist.
-#[test]
-#[should_panic(expected = "TicketingError")]
-fn test_waitlist_duplicate_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(TicketingContract, ());
-    let client = TicketingContractClient::new(&env, &contract_id);
-
-    let organizer = Address::generate(&env);
-    let holder = Address::generate(&env);
-    let waiter = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Full Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &Some(1),
-    );
-
-    client.issue_ticket(&organizer, &event_id, &holder, &test_qr_hash(&env, 1));
-
-    client.join_waitlist(&event_id, &waiter);
-    // Second join by same address must panic
-    client.join_waitlist(&event_id, &waiter);
-}
-
-/// Refunding a checked-in ticket should panic.
-#[test]
-#[should_panic(expected = "TicketingError")]
-fn test_refund_checked_in_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(TicketingContract, ());
-    let client = TicketingContractClient::new(&env, &contract_id);
-
-    let organizer = Address::generate(&env);
-    let holder = Address::generate(&env);
-    let operator = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &None,
-    );
-
-    let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &test_qr_hash(&env, 1));
-    client.check_in(&operator, &ticket_id);
-
-    // Refunding after check-in should fail
-    client.refund_ticket(&holder, &ticket_id);
-}
-
-/// Double-refunding a ticket should panic.
-#[test]
-#[should_panic(expected = "TicketingError")]
-fn test_refund_already_refunded_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(TicketingContract, ());
-    let client = TicketingContractClient::new(&env, &contract_id);
-
-    let organizer = Address::generate(&env);
-    let holder = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &None,
-    );
-
-    let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &test_qr_hash(&env, 1));
-
-    client.refund_ticket(&holder, &ticket_id);
-    // Second refund must panic
-    client.refund_ticket(&holder, &ticket_id);
-}
-
-/// join_waitlist for an event with no max_capacity set should panic.
-#[test]
-#[should_panic(expected = "TicketingError")]
-fn test_waitlist_no_capacity_limit_panics() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(TicketingContract, ());
-    let client = TicketingContractClient::new(&env, &contract_id);
-
-    let organizer = Address::generate(&env);
-    let waiter = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Unlimited Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &None, // no capacity limit
-    );
-
-    // Cannot join waitlist for unlimited event
-    client.join_waitlist(&event_id, &waiter);
-}
-
-/// After a refund with an empty waitlist, capacity is freed so a new ticket can be issued.
-#[test]
-fn test_refund_frees_capacity_when_no_waitlist() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register(TicketingContract, ());
-    let client = TicketingContractClient::new(&env, &contract_id);
-
-    let organizer = Address::generate(&env);
-    let holder = Address::generate(&env);
-    let new_buyer = Address::generate(&env);
-
-    let event_id = client.create_event(
-        &organizer,
-        &String::from_str(&env, "Event"),
-        &String::from_str(&env, "Desc"),
-        1000,
-        2000,
-        &Some(1),
-    );
-
-    let ticket_id = client.issue_ticket(&organizer, &event_id, &holder, &test_qr_hash(&env, 1));
-
-    // Refund without anyone on waitlist
-    client.refund_ticket(&holder, &ticket_id);
-
-    assert_eq!(client.get_event_ticket_count(&event_id), 0);
-
-    // Now a new ticket can be issued because capacity was freed
-    client.issue_ticket(&organizer, &event_id, &new_buyer, &test_qr_hash(&env, 2));
-    assert_eq!(client.get_event_ticket_count(&event_id), 1);
+    // Try to cancel again - should fail
+    client.cancel_event(&organizer, event_id);
 }

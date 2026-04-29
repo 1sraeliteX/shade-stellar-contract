@@ -1,15 +1,30 @@
 #![no_std]
 
 mod errors;
+#[cfg(test)]
+mod test_integration;
+#[cfg(test)]
+mod test_resale;
+#[cfg(test)]
+mod test_tiers;
 
 use crate::errors::TicketingError;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, Address, BytesN, Env, String, Vec,
+    contract, contractevent, contractimpl, contracttype, panic_with_error, token, Address, BytesN,
+    Env, String, Vec,
 };
 
-const HASH_LENGTH: usize = 32;
+/// Basis-point denominator used for royalty math (10_000 = 100%).
+const MAX_BPS: u32 = 10_000;
 
 // ── Data Structures ────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventState {
+    Active,
+    Cancelled,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +36,7 @@ pub struct Event {
     pub start_time: u64,
     pub end_time: u64,
     pub max_capacity: Option<u64>,
+    pub state: EventState,
 }
 
 #[contracttype]
@@ -32,7 +48,38 @@ pub struct Ticket {
     pub qr_hash: BytesN<32>,
     pub checked_in: bool,
     pub check_in_time: Option<u64>,
-    pub refunded: bool,
+    /// Pricing tier this ticket belongs to. `None` means the ticket was issued
+    /// without tier metadata (e.g. flat-priced events).
+    pub tier_id: Option<u64>,
+}
+
+/// A pricing tier within an event (e.g. "VIP", "Standard", "Early Bird").
+/// Each tier has its own capacity and price; total supply across tiers is
+/// validated against the event's `max_capacity` when set.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Tier {
+    pub tier_id: u64,
+    pub event_id: u64,
+    pub name: String,
+    /// Token base-unit price per ticket in this tier. Stored on-chain so
+    /// off-chain UIs can show consistent pricing.
+    pub price: i128,
+    pub max_supply: u64,
+    pub sold: u64,
+}
+
+/// Resale royalty configuration for an event. When present, secondary-market
+/// transfers via [`TicketingContract::resell_ticket`] route a percentage of
+/// the sale price to the organizer.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleConfig {
+    pub event_id: u64,
+    /// Token used to settle resales for this event.
+    pub payment_token: Address,
+    /// Royalty in basis points (10_000 = 100%). Must be <= 10_000.
+    pub royalty_bps: u32,
 }
 
 #[contracttype]
@@ -71,9 +118,12 @@ enum DataKey {
     Ticket(u64),
     EventCount,
     TicketCount,
-    EventTickets(u64),  // Vec<u64> – active ticket IDs for an event
+    EventTickets(u64),  // Vec<u64> - ticket IDs for an event
     CheckInRecord(u64), // CheckInRecord by ticket_id
-    Waitlist(u64),      // Vec<WaitlistEntry> – FIFO waitlist per event
+    Tier(u64),
+    TierCount,
+    EventTiers(u64),   // Vec<u64> - tier IDs for an event
+    ResaleConfig(u64), // ResaleConfig keyed by event_id
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────────
@@ -165,6 +215,13 @@ pub struct TicketTransferedEvent {
     pub timestamp: u64,
 }
 
+#[contractevent]
+pub struct EventCancelledEvent {
+    pub event_id: u64,
+    pub organizer: Address,
+    pub timestamp: u64,
+}
+
 pub fn publish_ticket_transferred_event(
     env: &Env,
     ticket_id: u64,
@@ -183,79 +240,36 @@ pub fn publish_ticket_transferred_event(
     .publish(env);
 }
 
-/// Emitted when a ticket is refunded / cancelled by its holder.
 #[contractevent]
-pub struct TicketRefundedEvent {
+pub struct TierCreatedEvent {
+    pub tier_id: u64,
+    pub event_id: u64,
+    pub name: String,
+    pub price: i128,
+    pub max_supply: u64,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+pub struct ResaleConfiguredEvent {
+    pub event_id: u64,
+    pub organizer: Address,
+    pub payment_token: Address,
+    pub royalty_bps: u32,
+    pub timestamp: u64,
+}
+
+#[contractevent]
+pub struct TicketResoldEvent {
     pub ticket_id: u64,
     pub event_id: u64,
-    pub old_holder: Address,
+    pub seller: Address,
+    pub buyer: Address,
+    pub sale_price: i128,
+    pub royalty: i128,
+    pub seller_proceeds: i128,
+    pub payment_token: Address,
     pub timestamp: u64,
-}
-
-pub fn publish_ticket_refunded_event(
-    env: &Env,
-    ticket_id: u64,
-    event_id: u64,
-    old_holder: Address,
-    timestamp: u64,
-) {
-    TicketRefundedEvent {
-        ticket_id,
-        event_id,
-        old_holder,
-        timestamp,
-    }
-    .publish(env);
-}
-
-/// Emitted when a user joins the waitlist.
-#[contractevent]
-pub struct WaitlistJoinedEvent {
-    pub event_id: u64,
-    pub applicant: Address,
-    pub position: u32,
-    pub timestamp: u64,
-}
-
-pub fn publish_waitlist_joined_event(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    position: u32,
-    timestamp: u64,
-) {
-    WaitlistJoinedEvent {
-        event_id,
-        applicant,
-        position,
-        timestamp,
-    }
-    .publish(env);
-}
-
-/// Emitted when a waitlisted user is automatically assigned a ticket after a refund.
-#[contractevent]
-pub struct WaitlistAssignedEvent {
-    pub event_id: u64,
-    pub applicant: Address,
-    pub ticket_id: u64,
-    pub timestamp: u64,
-}
-
-pub fn publish_waitlist_assigned_event(
-    env: &Env,
-    event_id: u64,
-    applicant: Address,
-    ticket_id: u64,
-    timestamp: u64,
-) {
-    WaitlistAssignedEvent {
-        event_id,
-        applicant,
-        ticket_id,
-        timestamp,
-    }
-    .publish(env);
 }
 
 // ── Helper Functions ───────────────────────────────────────────────────────────
@@ -295,64 +309,9 @@ fn add_ticket_to_event(env: &Env, event_id: u64, ticket_id: u64) {
     env.storage().persistent().set(&key, &tickets);
 }
 
-/// Remove a ticket_id from the event's active ticket list (used on refund).
-fn remove_ticket_from_event(env: &Env, event_id: u64, ticket_id: u64) {
-    let key = DataKey::EventTickets(event_id);
-    let tickets: Vec<u64> = env
+fn is_event_organizer(env: &Env, event_id: u64, organizer: &Address) -> bool {
+    let event: Event = env
         .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    let mut updated = Vec::new(env);
-    for tid in tickets.iter() {
-        if tid != ticket_id {
-            updated.push_back(tid);
-        }
-    }
-    env.storage().persistent().set(&key, &updated);
-}
-
-fn get_waitlist(env: &Env, event_id: u64) -> Vec<WaitlistEntry> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Waitlist(event_id))
-        .unwrap_or_else(|| Vec::new(env))
-}
-
-fn save_waitlist(env: &Env, event_id: u64, waitlist: &Vec<WaitlistEntry>) {
-    env.storage()
-        .persistent()
-        .set(&DataKey::Waitlist(event_id), waitlist);
-}
-
-/// Returns the number of active (non-refunded) tickets for an event.
-fn active_ticket_count(env: &Env, event_id: u64) -> u64 {
-    let ticket_ids: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&DataKey::EventTickets(event_id))
-        .unwrap_or_else(|| Vec::new(env));
-    ticket_ids.len() as u64
-}
-
-/// Internal: mint a new ticket without the QR-uniqueness check used at the
-/// outer `issue_ticket` call. Used for waitlist auto-assignment where the
-/// organizer is no longer the signer.
-fn mint_ticket(env: &Env, event_id: u64, holder: Address, qr_hash: BytesN<32>) -> u64 {
-    let ticket_count = get_ticket_count(env);
-    let new_ticket_id = ticket_count + 1;
-
-    let ticket = Ticket {
-        ticket_id: new_ticket_id,
-        event_id,
-        holder: holder.clone(),
-        qr_hash: qr_hash.clone(),
-        checked_in: false,
-        check_in_time: None,
-        refunded: false,
-    };
-
-    env.storage()
         .persistent()
         .set(&DataKey::Ticket(new_ticket_id), &ticket);
 
@@ -369,6 +328,39 @@ fn mint_ticket(env: &Env, event_id: u64, holder: Address, qr_hash: BytesN<32>) -
     );
 
     new_ticket_id
+}
+
+fn get_tier_count(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TierCount)
+        .unwrap_or(0)
+}
+
+fn sum_tier_max_supply(env: &Env, event_id: u64) -> u64 {
+    let tier_ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventTiers(event_id))
+        .unwrap_or_else(|| Vec::new(env));
+    let mut sum: u64 = 0;
+    for id in tier_ids.iter() {
+        if let Some(tier) = env
+            .storage()
+            .persistent()
+            .get::<_, Tier>(&DataKey::Tier(id))
+        {
+            sum = sum.saturating_add(tier.max_supply);
+        }
+    }
+    sum
+}
+
+/// `value * bps / 10_000` with checked multiplication so overflow on the
+/// intermediate product surfaces as `None` instead of silently wrapping.
+fn bps_of(value: i128, bps: u32) -> Option<i128> {
+    let scaled = value.checked_mul(bps as i128)?;
+    Some(scaled / MAX_BPS as i128)
 }
 
 // ── Contract ───────────────────────────────────────────────────────────────────
@@ -405,6 +397,7 @@ impl TicketingContract {
             start_time,
             end_time,
             max_capacity,
+            state: EventState::Active,
         };
 
         env.storage()
@@ -432,6 +425,38 @@ impl TicketingContract {
             .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound))
     }
 
+    /// Cancel an event. Only the organizer can cancel their own event.
+    /// This will halt all future ticket sales for the event.
+    pub fn cancel_event(env: Env, organizer: Address, event_id: u64) {
+        organizer.require_auth();
+
+        let mut event: Event = env.storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+
+        if event.organizer != organizer {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
+
+        if event.state == EventState::Cancelled {
+            panic_with_error!(env, TicketingError::EventCancelled);
+        }
+
+        event.state = EventState::Cancelled;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        publish_event_cancelled_event(
+            &env,
+            event_id,
+            organizer,
+            env.ledger().timestamp(),
+        );
+    }
+
     /// Issue a ticket for an event.
     /// The qr_hash must be a secure unique hash (SHA256) generated off-chain.
     pub fn issue_ticket(
@@ -454,10 +479,19 @@ impl TicketingContract {
             panic_with_error!(env, TicketingError::NotAuthorized);
         }
 
+        // Check if event is cancelled
+        if event.state == EventState::Cancelled {
+            panic_with_error!(env, TicketingError::EventCancelled);
+        }
+
         // Check capacity if set
         if let Some(max_cap) = event.max_capacity {
-            let active = active_ticket_count(&env, event_id);
-            if active >= max_cap {
+            let tickets: Vec<u64> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::EventTickets(event_id))
+                .unwrap_or_else(|| Vec::new(&env));
+            if tickets.len() as u64 >= max_cap {
                 panic_with_error!(env, TicketingError::EventAtCapacity);
             }
         }
@@ -476,7 +510,236 @@ impl TicketingContract {
             }
         }
 
-        mint_ticket(&env, event_id, holder, qr_hash)
+        let ticket_count = get_ticket_count(&env);
+        let new_ticket_id = ticket_count + 1;
+
+        let ticket = Ticket {
+            ticket_id: new_ticket_id,
+            event_id,
+            holder: holder.clone(),
+            qr_hash: qr_hash.clone(),
+            checked_in: false,
+            check_in_time: None,
+            tier_id: None,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(new_ticket_id), &ticket);
+
+        add_ticket_to_event(&env, event_id, new_ticket_id);
+        increment_ticket_count(&env, new_ticket_id);
+
+        publish_ticket_issued_event(
+            &env,
+            new_ticket_id,
+            event_id,
+            holder,
+            qr_hash,
+            env.ledger().timestamp(),
+        );
+
+        new_ticket_id
+    }
+
+    /// Add a pricing tier (e.g. "VIP", "Standard") to an existing event.
+    /// Tiers let an organizer charge different prices and cap supply per
+    /// category within the same event. Only the event's organizer may add
+    /// tiers; the combined `max_supply` across tiers cannot exceed the
+    /// event's overall capacity (when set).
+    pub fn add_tier(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        name: String,
+        price: i128,
+        max_supply: u64,
+    ) -> u64 {
+        organizer.require_auth();
+
+        if price < 0 {
+            panic_with_error!(env, TicketingError::InvalidTierPrice);
+        }
+        if max_supply == 0 {
+            panic_with_error!(env, TicketingError::InvalidTierSupply);
+        }
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+
+        if event.organizer != organizer {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
+
+        // If the event has an overall capacity, ensure the new tier doesn't
+        // push the total committed tier supply beyond it. This prevents an
+        // organizer from over-promising tickets that can never be issued.
+        if let Some(cap) = event.max_capacity {
+            let existing_tier_supply = sum_tier_max_supply(&env, event_id);
+            let new_total = existing_tier_supply.saturating_add(max_supply);
+            if new_total > cap {
+                panic_with_error!(env, TicketingError::TierAtCapacity);
+            }
+        }
+
+        let new_tier_id = get_tier_count(&env) + 1;
+
+        let tier = Tier {
+            tier_id: new_tier_id,
+            event_id,
+            name: name.clone(),
+            price,
+            max_supply,
+            sold: 0,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Tier(new_tier_id), &tier);
+
+        let mut event_tiers: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventTiers(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+        event_tiers.push_back(new_tier_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EventTiers(event_id), &event_tiers);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::TierCount, &new_tier_id);
+
+        TierCreatedEvent {
+            tier_id: new_tier_id,
+            event_id,
+            name,
+            price,
+            max_supply,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
+
+        new_tier_id
+    }
+
+    /// Issue a ticket bound to a specific pricing tier.
+    /// Increments the tier's `sold` counter and rejects further issuance once
+    /// the tier's `max_supply` is reached, regardless of remaining event
+    /// capacity. The tier must belong to the supplied event.
+    pub fn issue_tiered_ticket(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        holder: Address,
+        qr_hash: BytesN<32>,
+        tier_id: u64,
+    ) -> u64 {
+        organizer.require_auth();
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+
+        if event.organizer != organizer {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
+
+        let mut tier: Tier = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Tier(tier_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::TierNotFound));
+
+        if tier.event_id != event_id {
+            panic_with_error!(env, TicketingError::TierEventMismatch);
+        }
+        if tier.sold >= tier.max_supply {
+            panic_with_error!(env, TicketingError::TierAtCapacity);
+        }
+
+        if let Some(max_cap) = event.max_capacity {
+            let tickets: Vec<u64> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::EventTickets(event_id))
+                .unwrap_or_else(|| Vec::new(&env));
+            if tickets.len() as u64 >= max_cap {
+                panic_with_error!(env, TicketingError::EventAtCapacity);
+            }
+        }
+
+        let ticket_count = get_ticket_count(&env);
+        for i in 1..=ticket_count {
+            if let Some(t) = env
+                .storage()
+                .persistent()
+                .get::<_, Ticket>(&DataKey::Ticket(i))
+            {
+                if t.qr_hash == qr_hash {
+                    panic_with_error!(env, TicketingError::DuplicateQRHash);
+                }
+            }
+        }
+
+        let new_ticket_id = ticket_count + 1;
+        let ticket = Ticket {
+            ticket_id: new_ticket_id,
+            event_id,
+            holder: holder.clone(),
+            qr_hash: qr_hash.clone(),
+            checked_in: false,
+            check_in_time: None,
+            tier_id: Some(tier_id),
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(new_ticket_id), &ticket);
+        add_ticket_to_event(&env, event_id, new_ticket_id);
+        increment_ticket_count(&env, new_ticket_id);
+
+        tier.sold += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Tier(tier_id), &tier);
+
+        publish_ticket_issued_event(
+            &env,
+            new_ticket_id,
+            event_id,
+            holder,
+            qr_hash,
+            env.ledger().timestamp(),
+        );
+
+        new_ticket_id
+    }
+
+    pub fn get_tier(env: Env, tier_id: u64) -> Tier {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Tier(tier_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::TierNotFound))
+    }
+
+    pub fn get_event_tiers(env: Env, event_id: u64) -> Vec<Tier> {
+        let tier_ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventTiers(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut tiers = Vec::new(&env);
+        for id in tier_ids.iter() {
+            let tier: Tier = env.storage().persistent().get(&DataKey::Tier(id)).unwrap();
+            tiers.push_back(tier);
+        }
+        tiers
     }
 
     /// Get ticket details by ID.
@@ -541,6 +804,11 @@ impl TicketingContract {
             .persistent()
             .get(&DataKey::Ticket(ticket_id))
             .unwrap_or_else(|| panic_with_error!(env, TicketingError::TicketNotFound));
+
+        // Only event organizer can mark tickets as consumed.
+        if !is_event_organizer(&env, ticket.event_id, &operator) {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
 
         // Prevent double check-in (idempotency)
         if ticket.checked_in {
@@ -753,7 +1021,12 @@ impl TicketingContract {
 
     /// Get total number of tickets issued for an event.
     pub fn get_event_ticket_count(env: Env, event_id: u64) -> u64 {
-        active_ticket_count(&env, event_id)
+        let ticket_ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventTickets(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+        ticket_ids.len() as u64
     }
 
     /// Get total number of checked-in tickets for an event.
@@ -775,5 +1048,153 @@ impl TicketingContract {
             }
         }
         count
+    }
+
+    /// Configure royalty + payment token for secondary-market resales of an
+    /// event's tickets. Only the event organizer may call this; setting it
+    /// again overwrites the previous configuration. `royalty_bps` is in basis
+    /// points (10_000 = 100%).
+    pub fn set_resale_config(
+        env: Env,
+        organizer: Address,
+        event_id: u64,
+        payment_token: Address,
+        royalty_bps: u32,
+    ) {
+        organizer.require_auth();
+
+        if royalty_bps > MAX_BPS {
+            panic_with_error!(env, TicketingError::InvalidRoyaltyBps);
+        }
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+
+        if event.organizer != organizer {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
+
+        let config = ResaleConfig {
+            event_id,
+            payment_token: payment_token.clone(),
+            royalty_bps,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::ResaleConfig(event_id), &config);
+
+        ResaleConfiguredEvent {
+            event_id,
+            organizer,
+            payment_token,
+            royalty_bps,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
+    }
+
+    pub fn get_resale_config(env: Env, event_id: u64) -> ResaleConfig {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ResaleConfig(event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::ResaleNotConfigured))
+    }
+
+    /// Resell a ticket on the secondary market with automatic royalty payout
+    /// to the event organizer. The event must have a `ResaleConfig` set.
+    /// `sale_price` is paid by the buyer; the configured royalty share goes
+    /// to the organizer and the remainder to the seller.
+    ///
+    /// A checked-in ticket cannot be resold; reselling to oneself is rejected.
+    pub fn resell_ticket(
+        env: Env,
+        seller: Address,
+        buyer: Address,
+        ticket_id: u64,
+        sale_price: i128,
+    ) {
+        // Both parties must authorize: the seller for the ticket transfer and
+        // the buyer for the token outflow. Without buyer auth the inner
+        // `token.transfer` would fail under recording-mode auth.
+        seller.require_auth();
+        buyer.require_auth();
+
+        if sale_price <= 0 {
+            panic_with_error!(env, TicketingError::InvalidResalePrice);
+        }
+        if seller == buyer {
+            panic_with_error!(env, TicketingError::SameHolder);
+        }
+
+        let mut ticket: Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::TicketNotFound));
+
+        if ticket.holder != seller {
+            panic_with_error!(env, TicketingError::NotAuthorized);
+        }
+        if ticket.checked_in {
+            panic_with_error!(env, TicketingError::TicketAlreadyCheckedIn);
+        }
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(ticket.event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+
+        let config: ResaleConfig = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ResaleConfig(ticket.event_id))
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::ResaleNotConfigured));
+
+        let royalty = bps_of(sale_price, config.royalty_bps)
+            .unwrap_or_else(|| panic_with_error!(env, TicketingError::InvalidResalePrice));
+        if royalty < 0 || royalty > sale_price {
+            panic_with_error!(env, TicketingError::InvalidResalePrice);
+        }
+        let seller_proceeds = sale_price - royalty;
+
+        let token_client = token::TokenClient::new(&env, &config.payment_token);
+        if seller_proceeds > 0 {
+            token_client.transfer(&buyer, &seller, &seller_proceeds);
+        }
+        if royalty > 0 {
+            token_client.transfer(&buyer, &event.organizer, &royalty);
+        }
+
+        let old_holder = ticket.holder.clone();
+        ticket.holder = buyer.clone();
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(ticket_id), &ticket);
+
+        let now = env.ledger().timestamp();
+        publish_ticket_transferred_event(
+            &env,
+            ticket_id,
+            ticket.event_id,
+            old_holder,
+            buyer.clone(),
+            now,
+        );
+        TicketResoldEvent {
+            ticket_id,
+            event_id: ticket.event_id,
+            seller,
+            buyer,
+            sale_price,
+            royalty,
+            seller_proceeds,
+            payment_token: config.payment_token,
+            timestamp: now,
+        }
+        .publish(&env);
     }
 }
