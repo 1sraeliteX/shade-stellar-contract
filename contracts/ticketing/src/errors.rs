@@ -12,4 +12,7 @@ pub enum TicketingError {
     AlreadyCheckedIn = 6,
     TicketAlreadyCheckedIn = 7,
     InvalidTimeRange = 8,
+    NotAtCapacity = 9,
+    AlreadyOnWaitlist = 10,
+    TicketAlreadyRefunded = 11,
 }
