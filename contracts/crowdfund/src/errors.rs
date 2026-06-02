@@ -20,4 +20,6 @@ pub enum CrowdfundError {
     NoPledge = 10,
     // Funds have already been withdrawn by the organizer.
     AlreadyExecuted = 11,
+    // Reward for this backer has already been marked fulfilled.
+    AlreadyFulfilled = 12,
 }

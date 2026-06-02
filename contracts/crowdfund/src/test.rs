@@ -330,3 +330,42 @@ fn test_set_stretch_goals_non_ascending_panics() {
     // 5_000 then 2_000 is not ascending — must panic.
     client.set_stretch_goals(&vec![&env, 5_000_i128, 2_000_i128]);
 }
+
+// ── #309 – Reward fulfillment tracking ───────────────────────────────────────
+
+#[test]
+fn test_fulfill_reward_marks_backer_as_fulfilled() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    assert!(!client.is_fulfilled(&contributor));
+    client.fulfill_reward(&contributor);
+    assert!(client.is_fulfilled(&contributor));
+}
+
+#[test]
+#[should_panic]
+fn test_fulfill_reward_twice_panics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    client.fulfill_reward(&contributor);
+    client.fulfill_reward(&contributor); // must panic
+}
+
+#[test]
+fn test_is_fulfilled_default_false() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    assert!(!client.is_fulfilled(&contributor));
+}

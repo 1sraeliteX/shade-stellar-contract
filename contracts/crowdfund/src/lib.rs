@@ -27,6 +27,11 @@ pub struct StretchGoalReachedEvent {
     pub threshold: i128,
 }
 
+#[contractevent]
+pub struct RewardFulfilledEvent {
+    pub backer: Address,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -42,6 +47,8 @@ enum DataKey {
     StretchGoals,
     // Tracks which stretch goal indexes have already been emitted.
     StretchTriggered(u32),
+    // Tracks whether the organizer has fulfilled a specific backer's reward.
+    RewardFulfilled(Address),
 }
 
 #[contract]
@@ -278,6 +285,41 @@ impl CrowdfundContract {
         env.storage()
             .persistent()
             .set(&DataKey::StretchGoals, &milestones);
+    }
+
+    /// Mark a backer's reward as fulfilled. Only callable by the organizer.
+    /// Panics if called a second time for the same backer.
+    pub fn fulfill_reward(env: Env, backer: Address) {
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        organizer.require_auth();
+
+        if env
+            .storage()
+            .persistent()
+            .get(&DataKey::RewardFulfilled(backer.clone()))
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, CrowdfundError::AlreadyFulfilled);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::RewardFulfilled(backer.clone()), &true);
+
+        RewardFulfilledEvent { backer }.publish(&env);
+    }
+
+    /// Returns `true` if the organizer has marked the backer's reward as fulfilled.
+    pub fn is_fulfilled(env: Env, backer: Address) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::RewardFulfilled(backer))
+            .unwrap_or(false)
     }
 
     /// Returns the pledge amount recorded for a given contributor.
