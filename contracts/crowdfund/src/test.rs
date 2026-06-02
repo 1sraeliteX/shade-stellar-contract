@@ -477,11 +477,46 @@ fn setup_milestone_campaign() -> (Env, Address, CrowdfundContractClient<'static>
     (env, contract, client, token, organizer, contributor)
 }
 
+fn setup_governed_milestone_campaign() -> (
+    Env,
+    Address,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let (env, contract, client, token, organizer, voter1) = setup();
+    let voter2 = Address::generate(&env);
+    let voter3 = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    client.set_milestones(&soroban_sdk::vec![&env, 10_000_u32]);
+
+    {
+        let token_admin = StellarAssetClient::new(&env, &token);
+        token_admin.mint(&voter1, &4_000);
+        token_admin.mint(&voter2, &3_000);
+        token_admin.mint(&voter3, &3_000);
+    }
+
+    client.contribute(&voter1, &4_000);
+    client.contribute(&voter2, &3_000);
+    client.contribute(&voter3, &3_000);
+
+    env.ledger().with_mut(|l| l.timestamp += 86_401);
+
+    (env, contract, client, token, organizer, voter1, voter2, voter3)
+}
+
 #[test]
 fn test_release_milestone_transfers_correct_amount() {
-    let (env, _contract, client, token, organizer, _contributor) = setup_milestone_campaign();
+    let (env, _contract, client, token, organizer, contributor) = setup_milestone_campaign();
 
     client.unlock_milestone(&0);
+    client.vote_milestone(&contributor, &0, &true);
     client.release_milestone(&0);
 
     // 50% of 10_000 = 5_000
@@ -493,13 +528,16 @@ fn test_release_milestone_transfers_correct_amount() {
 
 #[test]
 fn test_all_milestones_release_full_raised_amount() {
-    let (env, _contract, client, token, organizer, _contributor) = setup_milestone_campaign();
+    let (env, _contract, client, token, organizer, contributor) = setup_milestone_campaign();
 
     client.unlock_milestone(&0);
+    client.vote_milestone(&contributor, &0, &true);
     client.release_milestone(&0);
     client.unlock_milestone(&1);
+    client.vote_milestone(&contributor, &1, &true);
     client.release_milestone(&1);
     client.unlock_milestone(&2);
+    client.vote_milestone(&contributor, &2, &true);
     client.release_milestone(&2);
 
     // 50% + 30% + 20% = 100% of 10_000
@@ -520,8 +558,9 @@ fn test_release_milestone_without_unlock_panics() {
 #[test]
 #[should_panic]
 fn test_release_milestone_twice_panics() {
-    let (_env, _contract, client, _token, _organizer, _contributor) = setup_milestone_campaign();
+    let (_env, _contract, client, _token, _organizer, contributor) = setup_milestone_campaign();
     client.unlock_milestone(&0);
+    client.vote_milestone(&contributor, &0, &true);
     client.release_milestone(&0);
     client.release_milestone(&0); // must panic
 }
@@ -556,6 +595,68 @@ fn test_release_milestone_before_deadline_panics() {
     // Deadline not yet passed — must panic
     client.unlock_milestone(&0);
     client.release_milestone(&0);
+}
+
+// ── #313 – Governance voting controls milestone capital release ──────────────
+
+#[test]
+fn majority_vote_allows_milestone_release() {
+    let (env, contract, client, token, organizer, voter1, voter2, _voter3) =
+        setup_governed_milestone_campaign();
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+
+    client.unlock_milestone(&0);
+    client.vote_milestone(&voter1, &0, &true);
+    client.vote_milestone(&voter2, &0, &true);
+
+    let organizer_before = token_client.balance(&organizer);
+    let contract_before = token_client.balance(&contract);
+    client.release_milestone(&0);
+
+    assert_eq!(contract_before, 10_000);
+    assert_eq!(token_client.balance(&organizer) - organizer_before, 10_000);
+    assert_eq!(token_client.balance(&contract), 0);
+
+    let second_release = client.try_release_milestone(&0);
+    assert!(second_release.is_err());
+}
+
+#[test]
+fn rejected_milestone_blocks_fund_release() {
+    let (env, contract, client, token, organizer, voter1, voter2, voter3) =
+        setup_governed_milestone_campaign();
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+
+    client.unlock_milestone(&0);
+    client.vote_milestone(&voter1, &0, &false);
+    client.vote_milestone(&voter2, &0, &false);
+    client.vote_milestone(&voter3, &0, &true);
+
+    let organizer_before = token_client.balance(&organizer);
+    let contract_before = token_client.balance(&contract);
+    let result = client.try_release_milestone(&0);
+
+    assert!(result.is_err());
+    assert_eq!(token_client.balance(&organizer), organizer_before);
+    assert_eq!(token_client.balance(&contract), contract_before);
+}
+
+#[test]
+fn milestone_without_majority_cannot_release_funds() {
+    let (env, contract, client, token, organizer, voter1, _voter2, _voter3) =
+        setup_governed_milestone_campaign();
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+
+    client.unlock_milestone(&0);
+    client.vote_milestone(&voter1, &0, &true);
+
+    let organizer_before = token_client.balance(&organizer);
+    let contract_before = token_client.balance(&contract);
+    let result = client.try_release_milestone(&0);
+
+    assert!(result.is_err());
+    assert_eq!(token_client.balance(&organizer), organizer_before);
+    assert_eq!(token_client.balance(&contract), contract_before);
 }
 
 // ── #310 – Reward tier allocation constraints & fulfillment toggles ───────────

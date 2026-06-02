@@ -36,6 +36,12 @@ pub enum CrowdfundError {
     InvalidMilestonePercentages = 18,
     // Campaign is in milestone mode; use release_milestone instead of execute_campaign.
     MilestonesActive = 19,
+    // Milestone release does not have a strict majority approval from backers.
+    MilestoneNotApproved = 20,
+    // Only contributors with a recorded pledge can vote on milestone release.
+    NotBacker = 21,
+    // A backer can only vote once per milestone.
+    MilestoneVoteAlreadyCast = 22,
     // Shade payment gateway address has not been configured.
     ShadeGatewayNotSet = 20,
     // Merchant account address has not been configured.

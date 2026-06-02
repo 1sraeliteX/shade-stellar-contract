@@ -67,6 +67,13 @@ pub struct MilestoneReleasedEvent {
 }
 
 #[contractevent]
+pub struct MilestoneVoteCastEvent {
+    pub index: u32,
+    pub voter: Address,
+    pub approve: bool,
+    pub weight: i128,
+}
+
 pub struct PledgeReceivedEvent {
     pub contributor: Address,
     pub amount: i128,
@@ -105,6 +112,11 @@ enum DataKey {
     MilestoneUnlocked(u32),
     // Whether a specific milestone's funds have been released.
     MilestoneReleased(u32),
+    // Backer vote weight totals for a specific milestone.
+    MilestoneApprovalWeight(u32),
+    MilestoneRejectionWeight(u32),
+    // Tracks whether a backer already voted for a specific milestone.
+    MilestoneVote(u32, Address),
     // Shade gateway contract address for payment processing.
     ShadeGateway,
     // Merchant ID for this campaign (registered on Shade).
@@ -627,6 +639,51 @@ impl CrowdfundContract {
         MilestoneUnlockedEvent { index }.publish(&env);
     }
 
+    /// Cast a backer governance vote for releasing a specific milestone.
+    /// Vote weight is the backer's recorded pledge amount.
+    pub fn vote_milestone(env: Env, voter: Address, index: u32, approve: bool) {
+        voter.require_auth();
+
+        let percentages: Vec<u32> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MilestonePercentages)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::MilestonesNotSet));
+
+        if index >= percentages.len() {
+            panic_with_error!(&env, CrowdfundError::InvalidMilestonePercentages);
+        }
+
+        let weight: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pledge(voter.clone()))
+            .unwrap_or(0);
+
+        if weight <= 0 {
+            panic_with_error!(&env, CrowdfundError::NotBacker);
+        }
+
+        let vote_key = DataKey::MilestoneVote(index, voter.clone());
+        if env.storage().persistent().has(&vote_key) {
+            panic_with_error!(&env, CrowdfundError::MilestoneVoteAlreadyCast);
+        }
+
+        let tally_key = if approve {
+            DataKey::MilestoneApprovalWeight(index)
+        } else {
+            DataKey::MilestoneRejectionWeight(index)
+        };
+
+        let current: i128 = env.storage().persistent().get(&tally_key).unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&tally_key, &current.saturating_add(weight));
+        env.storage().persistent().set(&vote_key, &approve);
+
+        MilestoneVoteCastEvent { index, voter, approve, weight }.publish(&env);
+    }
+
     /// Release the proportional funds for an unlocked, unreleased milestone to the organizer.
     /// Can only be called after the campaign deadline and goal is met.
     pub fn release_milestone(env: Env, index: u32) {
@@ -692,6 +749,16 @@ impl CrowdfundContract {
 
         if released {
             panic_with_error!(&env, CrowdfundError::MilestoneAlreadyReleased);
+        }
+
+        let approval_weight: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MilestoneApprovalWeight(index))
+            .unwrap_or(0);
+
+        if approval_weight <= raised / 2 {
+            panic_with_error!(&env, CrowdfundError::MilestoneNotApproved);
         }
 
         let bps = percentages.get(index).unwrap() as i128;
