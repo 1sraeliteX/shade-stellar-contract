@@ -42,4 +42,10 @@ pub enum CrowdfundError {
     NotBacker = 21,
     // A backer can only vote once per milestone.
     MilestoneVoteAlreadyCast = 22,
+    // Shade payment gateway address has not been configured.
+    ShadeGatewayNotSet = 20,
+    // Merchant account address has not been configured.
+    MerchantAccountNotSet = 21,
+    // Batch refund has already been processed.
+    RefundAlreadyProcessed = 22,
 }
