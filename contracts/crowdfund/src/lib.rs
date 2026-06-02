@@ -6,9 +6,19 @@ mod test;
 
 use errors::CrowdfundError;
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contracttype, panic_with_error, token, vec, Address,
-    Env, String, Vec,
+    contract, contractclient, contractevent, contractimpl, contracttype, panic_with_error, token,
+    vec, Address, Env, String, Vec,
 };
+
+#[contractclient(name = "InvoicePaymentClient")]
+trait InvoicePayment {
+    fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
+}
+
+#[contractclient(name = "MerchantAccountRefundClient")]
+trait MerchantAccountRefund {
+    fn refund(env: Env, token: Address, amount: i128, to: Address);
+}
 
 #[contractevent]
 pub struct CampaignExecutedEvent {
@@ -56,6 +66,18 @@ pub struct MilestoneReleasedEvent {
     pub amount: i128,
 }
 
+#[contractevent]
+pub struct PledgeReceivedEvent {
+    pub contributor: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct BatchRefundProcessedEvent {
+    pub total_refunded: i128,
+    pub contributor_count: u32,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -83,6 +105,16 @@ enum DataKey {
     MilestoneUnlocked(u32),
     // Whether a specific milestone's funds have been released.
     MilestoneReleased(u32),
+    // Shade gateway contract address for payment processing.
+    ShadeGateway,
+    // Merchant ID for this campaign (registered on Shade).
+    MerchantId,
+    // Merchant account address for refunds.
+    MerchantAccount,
+    // Ordered list of all contributors for batch refunds.
+    Contributors,
+    // Tracks whether batch refund has been processed.
+    RefundProcessed,
 }
 
 #[contract]
