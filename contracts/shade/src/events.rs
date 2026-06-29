@@ -833,6 +833,69 @@ pub fn publish_merchant_token_removed_event(
     .publish(env);
 }
 
+#[contractevent]
+pub struct AutoWithdrawThresholdEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
+
+pub fn publish_auto_withdrawal_threshold_set_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    threshold: i128,
+) {
+    AutoWithdrawThresholdEvent {
+        merchant_id,
+        token,
+        threshold,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawRecipientEvent {
+    pub merchant_id: u64,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_recipient_set_event(
+    env: &Env,
+    merchant_id: u64,
+    recipient: Address,
+) {
+    AutoWithdrawRecipientEvent {
+        merchant_id,
+        recipient,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawalTriggeredEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_triggered_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+) {
+    AutoWithdrawalTriggeredEvent {
+        merchant_id,
+        token,
+        amount,
+        recipient,
+    }
+    .publish(env);
+}
+
 // ── Admin transfer events ────────────────────────────────────────────────────
 
 #[contractevent]
@@ -999,6 +1062,242 @@ pub fn publish_ticket_resold_event(
         resale_price,
         royalty,
         seller_proceeds,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct EscrowExpiredRefundEvent {
+    pub invoice_id: u64,
+    pub buyer: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_expired_refund_event(
+    env: &Env,
+    invoice_id: u64,
+    buyer: Address,
+    amount: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    EscrowExpiredRefundEvent {
+        invoice_id,
+        buyer,
+        amount,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub goal: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    goal: i128,
+    token: Address,
+    deadline: u64,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        goal,
+        token,
+        deadline,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignPledgedEvent {
+    pub campaign_id: u64,
+    pub merchant_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub raised: i128,
+    pub goal: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_pledged_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant_id: u64,
+    backer: Address,
+    amount: i128,
+    raised: i128,
+    goal: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    CampaignPledgedEvent {
+        campaign_id,
+        merchant_id,
+        backer,
+        amount,
+        raised,
+        goal,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignFailedEvent {
+    pub campaign_id: u64,
+    pub merchant_id: u64,
+    pub raised: i128,
+    pub goal: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_failed_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant_id: u64,
+    raised: i128,
+    goal: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    CampaignFailedEvent {
+        campaign_id,
+        merchant_id,
+        raised,
+        goal,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignSucceededEvent {
+    pub campaign_id: u64,
+    pub merchant_id: u64,
+    pub merchant_account: Address,
+    pub raised: i128,
+    pub fee: i128,
+    pub merchant_amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_succeeded_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant_id: u64,
+    merchant_account: Address,
+    raised: i128,
+    fee: i128,
+    merchant_amount: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    CampaignSucceededEvent {
+        campaign_id,
+        merchant_id,
+        merchant_account,
+        raised,
+        fee,
+        merchant_amount,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignRefundClaimedEvent {
+    pub campaign_id: u64,
+    pub merchant_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub total_refunded: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_refund_claimed_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant_id: u64,
+    backer: Address,
+    amount: i128,
+    total_refunded: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    CampaignRefundClaimedEvent {
+        campaign_id,
+        merchant_id,
+        backer,
+        amount,
+        total_refunded,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignRefundBatchEvent {
+    pub campaign_id: u64,
+    pub merchant_id: u64,
+    pub total_refunded: i128,
+    pub processed_count: u32,
+    pub next_cursor: u32,
+    pub status: u32,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_failed_campaign_refund_batch_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant_id: u64,
+    total_refunded: i128,
+    processed_count: u32,
+    next_cursor: u32,
+    status: crate::types::CampaignStatus,
+    token: Address,
+    timestamp: u64,
+) {
+    CampaignRefundBatchEvent {
+        campaign_id,
+        merchant_id,
+        total_refunded,
+        processed_count,
+        next_cursor,
+        status: status as u32,
         token,
         timestamp,
     }

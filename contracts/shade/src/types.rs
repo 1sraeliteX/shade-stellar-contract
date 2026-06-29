@@ -37,6 +37,8 @@ pub enum DataKey {
     MerchantAnalyticsSummary(Address),
     PlatformAccount,
     TokenOracle(Address),
+    MerchantAutoWithdrawalThreshold(u64, Address),
+    MerchantAutoWithdrawalRecipient(u64),
     // --- Event system ---
     Event(u64),
     EventCount,
@@ -47,6 +49,12 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Crowdfunding campaigns ---
+    Campaign(u64),
+    CampaignCount,
+    CampaignPledge(u64, Address),
+    CampaignBackers(u64),
+    CampaignRefundCursor(u64),
 }
 
 #[contracttype]
@@ -357,4 +365,38 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum CampaignStatus {
+    Active = 0,
+    Successful = 1,
+    Failed = 2,
+    Refunded = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Campaign {
+    pub id: u64,
+    pub merchant_id: u64,
+    pub goal: i128,
+    pub raised: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub status: CampaignStatus,
+    pub created_at: u64,
+    pub finalized_at: Option<u64>,
+    pub total_refunded: i128,
+    pub refund_count: u32,
 }

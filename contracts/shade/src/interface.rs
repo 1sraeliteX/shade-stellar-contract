@@ -1,7 +1,7 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    Campaign, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
     MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -72,6 +72,7 @@ pub trait ShadeTrait {
     fn get_invoice(env: Env, invoice_id: u64) -> Invoice;
     fn resolve_invoice_amount(env: Env, invoice_id: u64) -> i128;
     fn refund_invoice(env: Env, merchant: Address, invoice_id: u64);
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
     fn set_merchant_key(env: Env, merchant: Address, key: BytesN<32>);
     fn get_merchant_key(env: Env, merchant: Address) -> BytesN<32>;
     fn grant_role(env: Env, admin: Address, user: Address, role: Role);
@@ -164,12 +165,22 @@ pub trait ShadeTrait {
     /// Get all transactions executed by a specific customer address.
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction>;
 
-    // ── Cross-chain bridge placeholder ───────────────────────────────────────
-    fn emit_bridge_placeholder(
+    fn create_campaign(
         env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    );
+        merchant: Address,
+        goal: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64;
+    fn pledge_campaign(env: Env, backer: Address, campaign_id: u64, amount: i128);
+    fn finalize_campaign(env: Env, merchant: Address, campaign_id: u64);
+    fn claim_campaign_refund(env: Env, backer: Address, campaign_id: u64) -> i128;
+    fn process_failed_campaign_refunds(env: Env, campaign_id: u64, limit: u32) -> (i128, u32);
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign;
+    fn get_campaign_pledge(env: Env, campaign_id: u64, backer: Address) -> i128;
+
+    // ── Cross-chain bridge placeholder ───────────────────────────────────────
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload);
 
     // --- Event ticketing system ---
     #[allow(clippy::too_many_arguments)]
@@ -194,13 +205,7 @@ pub trait ShadeTrait {
     );
     fn get_current_ticket_price(env: Env, event_id: u64) -> i128;
     fn cancel_event_and_batch_refund(env: Env, merchant: Address, event_id: u64);
-    fn resell_ticket(
-        env: Env,
-        seller: Address,
-        buyer: Address,
-        ticket_id: u64,
-        resale_price: i128,
-    );
+    fn resell_ticket(env: Env, seller: Address, buyer: Address, ticket_id: u64, resale_price: i128);
     fn get_event(env: Env, event_id: u64) -> Event;
     fn get_ticket(env: Env, ticket_id: u64) -> Ticket;
     fn get_event_tickets(env: Env, event_id: u64) -> Vec<u64>;

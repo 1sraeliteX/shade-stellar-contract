@@ -1,15 +1,15 @@
 use crate::components::{
-    access_control as access_control_component, admin as admin_component, core as core_component,
+    access_control as access_control_component, admin as admin_component,
+    campaign as campaign_component, core as core_component, history as history_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    Campaign, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter,
+    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
     PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
@@ -234,6 +234,11 @@ impl ShadeTrait for Shade {
         invoice_component::refund_invoice(&env, &merchant, invoice_id);
     }
 
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
+
     fn set_merchant_key(env: Env, merchant: Address, key: BytesN<32>) {
         merchant_component::set_merchant_key(&env, &merchant, &key);
     }
@@ -434,20 +439,50 @@ impl ShadeTrait for Shade {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction> {
         history_component::get_user_transactions(&env, user)
     }
-    
-    fn emit_bridge_placeholder(
+
+    fn create_campaign(
         env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    ) {
+        merchant: Address,
+        goal: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::create_campaign(&env, &merchant, goal, &token, deadline)
+    }
+
+    fn pledge_campaign(env: Env, backer: Address, campaign_id: u64, amount: i128) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::pledge_campaign(&env, &backer, campaign_id, amount);
+    }
+
+    fn finalize_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::finalize_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn claim_campaign_refund(env: Env, backer: Address, campaign_id: u64) -> i128 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::claim_campaign_refund(&env, &backer, campaign_id)
+    }
+
+    fn process_failed_campaign_refunds(env: Env, campaign_id: u64, limit: u32) -> (i128, u32) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::process_failed_campaign_refunds(&env, campaign_id, limit)
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        campaign_component::get_campaign(&env, campaign_id)
+    }
+
+    fn get_campaign_pledge(env: Env, campaign_id: u64, backer: Address) -> i128 {
+        campaign_component::get_campaign_pledge(&env, campaign_id, &backer)
+    }
+
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload) {
         pausable_component::assert_not_paused(&env);
         caller.require_auth();
-        events::publish_bridge_placeholder_event(
-            &env,
-            caller,
-            payload,
-            env.ledger().timestamp(),
-        );
+        events::publish_bridge_placeholder_event(&env, caller, payload, env.ledger().timestamp());
     }
 
     // --- Event ticketing system ---

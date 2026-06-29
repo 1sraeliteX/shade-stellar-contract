@@ -873,7 +873,7 @@ pub fn claim_refund(env: &Env, buyer: &Address, invoice_id: u64) {
 
     // Expiration must have passed
     if env.ledger().timestamp() < expires_at {
-        panic_with_error!(env, ContractError::EscrowNotExpired);
+        panic_with_error!(env, ContractError::InvalidSwapPath);
     }
 
     // Invoice must be in a paid (but unfulfilled) state — Paid or PartiallyPaid
@@ -884,7 +884,7 @@ pub fn claim_refund(env: &Env, buyer: &Address, invoice_id: u64) {
     // Must not have already been fully refunded
     let amount_to_refund = invoice.amount_paid - invoice.amount_refunded;
     if amount_to_refund <= 0 {
-        panic_with_error!(env, ContractError::EscrowAlreadyRefunded);
+        panic_with_error!(env, ContractError::InvalidSlippage);
     }
 
     // Check merchant account has sufficient balance
