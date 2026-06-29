@@ -1,4 +1,5 @@
 #![cfg(test)]
+extern crate std;
 
 use crate::shade::{Shade, ShadeClient};
 use crate::types::{MerchantAnalytics, MerchantAnalyticsSummary, TokenAnalytics};
@@ -367,14 +368,14 @@ fn test_analytics_consistency_across_payment_types() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Create multiple invoices with different amounts
-    let amounts = vec![500, 1000, 1500, 2000, 2500];
+    let amounts = std::vec![500, 1000, 1500, 2000, 2500];
     let mut expected_volume = 0i128;
     let mut expected_fees = 0i128;
 
     for (i, amount) in amounts.iter().enumerate() {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("invoice_{}", i)),
+            &String::from_str(&env, &std::format!("invoice_{}", i)),
             amount,
             &token1,
             &None,
@@ -498,7 +499,7 @@ fn test_analytics_timestamp_accuracy() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Set specific timestamps for testing
-    let timestamps = vec![1000000u64, 1001000u64, 1002000u64];
+    let timestamps = std::vec![1000000u64, 1001000u64, 1002000u64];
     
     for (i, &timestamp) in timestamps.iter().enumerate() {
         env.ledger().with_mut(|li| {
@@ -507,7 +508,7 @@ fn test_analytics_timestamp_accuracy() {
 
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("timestamp_test_{}", i)),
+            &String::from_str(&env, &std::format!("timestamp_test_{}", i)),
             &1000,
             &token1,
             &None,
@@ -625,7 +626,7 @@ fn test_analytics_aggregation_performance() {
     for i in 0..num_transactions {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("perf_test_{}", i)),
+            &String::from_str(&env, &std::format!("perf_test_{}", i)),
             &amount_per_transaction,
             &token1,
             &None,
@@ -714,14 +715,14 @@ fn test_analytics_merchant_volume_discount_integration() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Track volume and fee changes as discounts kick in
-    let payment_amounts = vec![5000, 6000, 40000, 10000]; // Will trigger different discount tiers
+    let payment_amounts = std::vec![5000, 6000, 40000, 10000]; // Will trigger different discount tiers
     let mut expected_volume = 0i128;
     let mut expected_fees = 0i128;
 
     for (i, &amount) in payment_amounts.iter().enumerate() {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("discount_test_{}", i)),
+            &String::from_str(&env, &std::format!("discount_test_{}", i)),
             &amount,
             &token1,
             &None,
@@ -826,8 +827,8 @@ fn test_analytics_data_consistency_after_refunds() {
     assert_eq!(analytics_after_payment.total_fees, 200);
     assert_eq!(analytics_after_payment.transaction_count, 1);
 
-    // Refund the invoice
-    client.refund_invoice(&merchant, &inv, &1000); // Partial refund
+    // Refund the invoice (partial refund)
+    client.refund_invoice_partial(&merchant, &inv, &1000);
 
     // Analytics should remain unchanged after refund (refunds don't reduce analytics)
     let analytics_after_refund = client.get_merchant_analytics(&merchant, &token1);

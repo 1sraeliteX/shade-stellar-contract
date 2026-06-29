@@ -234,4 +234,10 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Fulfillment Escrow ──────────────────────────────────────────────────
+
+    /// Claim a refund on an expired escrow invoice.
+    /// Only the original payer may call this after the invoice's `expires_at` has passed.
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
 }

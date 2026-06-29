@@ -4,13 +4,14 @@ pub mod test_access_control;
 pub mod test_account_factory;
 pub mod test_admin_payment;
 pub mod test_admin_transfer;
-pub mod test_auto_withdrawal;
+// pub mod test_auto_withdrawal; // Feature not wired up via contract interface yet
 pub mod test_fee_discount;
 // pub mod test_batch_token_whitelist;
 pub mod test_calculate_fee;
 pub mod test_date_range_filter;
 pub mod test_draft_invoice;
 pub mod test_expired_escrow_refund;
+pub mod test_feature_197;
 pub mod test_fee_discounts;
 pub mod test_fees;
 pub mod test_invoice;

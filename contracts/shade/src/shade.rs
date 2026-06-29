@@ -572,4 +572,9 @@ impl ShadeTrait for Shade {
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
     }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
 }

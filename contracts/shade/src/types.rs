@@ -47,6 +47,9 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Auto-withdrawal ---
+    MerchantAutoWithdrawalThreshold(u64, Address),
+    MerchantAutoWithdrawalRecipient(u64),
 }
 
 #[contracttype]
@@ -357,4 +360,12 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
 }
