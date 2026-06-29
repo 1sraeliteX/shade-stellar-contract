@@ -53,4 +53,6 @@ pub enum ContractError {
     NotTicketOwner = 52,
     TicketEventMismatch = 53,
     InvalidResalePrice = 54,
+    EscrowNotFound = 55,
+    InvalidEscrowStatus = 56,
 }
