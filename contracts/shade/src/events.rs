@@ -1004,3 +1004,180 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Backer rewards (crowdfunding tiers & perks) ───────────────────────────────
+
+#[contractevent]
+pub struct BackerCampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub name: String,
+    pub token: Address,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_backer_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    name: String,
+    token: Address,
+    deadline: u64,
+    timestamp: u64,
+) {
+    BackerCampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        name,
+        token,
+        deadline,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerRewardTiersSetEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub tier_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_tiers_set_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    tier_count: u32,
+    timestamp: u64,
+) {
+    BackerRewardTiersSetEvent {
+        campaign_id,
+        merchant,
+        tier_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerPledgeRecordedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub total_pledge: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_pledge_recorded_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    amount: i128,
+    total_pledge: i128,
+    timestamp: u64,
+) {
+    BackerPledgeRecordedEvent {
+        campaign_id,
+        backer,
+        amount,
+        total_pledge,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerRewardTierSelectedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub tier_index: u32,
+    pub min_pledge: i128,
+    pub perk_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_tier_selected_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    tier_index: u32,
+    min_pledge: i128,
+    perk_count: u32,
+    timestamp: u64,
+) {
+    BackerRewardTierSelectedEvent {
+        campaign_id,
+        backer,
+        tier_index,
+        min_pledge,
+        perk_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerRewardFulfilledEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub backer: Address,
+    pub tier_index: Option<u32>,
+    pub pledge: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_fulfilled_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    backer: Address,
+    tier_index: Option<u32>,
+    pledge: i128,
+    timestamp: u64,
+) {
+    BackerRewardFulfilledEvent {
+        campaign_id,
+        merchant,
+        backer,
+        tier_index,
+        pledge,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerPerkClaimedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub tier_index: u32,
+    pub perk_index: u32,
+    pub perk_name: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_perk_claimed_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    tier_index: u32,
+    perk_index: u32,
+    perk_name: String,
+    timestamp: u64,
+) {
+    BackerPerkClaimedEvent {
+        campaign_id,
+        backer,
+        tier_index,
+        perk_index,
+        perk_name,
+        timestamp,
+    }
+    .publish(env);
+}
