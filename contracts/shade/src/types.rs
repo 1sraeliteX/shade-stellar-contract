@@ -358,3 +358,90 @@ pub struct PaymentPayload {
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
 }
+
+
+// ── KYC/Verification System ────────────────────────────────────────────────────
+// NOTE: DataKey storage keys are generated dynamically using string keys to avoid
+// enum size limits in Soroban's contracttype serialization.
+// KYC module uses the following key patterns:
+// - "kyc_request:{id}" -> KycRequest
+// - "kyc_request_count" -> u64
+// - "kyc_status:{address}" -> VerificationStatus
+// - "kyc_expiration:{address}" -> u64
+// - "kyc_rejection_reason:{id}" -> String
+// - "kyc_pending_list" -> Vec<u64>
+// - "kyc_approved_list" -> Vec<Address>
+// - "kyc_rejected_list" -> Vec<Address>
+// - "kyc_reviewer_role:{address}" -> bool
+// - "campaign_kyc_status:{id}" -> CampaignKycStatus
+// - "backer_kyc_status:{address}" -> BackerKycStatus
+
+/// Verification status for KYC states
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum VerificationStatus {
+    Unverified = 0,
+    Pending = 1,
+    Approved = 2,
+    Rejected = 3,
+    Suspended = 4,
+}
+
+/// Type of KYC verification being performed
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum VerificationType {
+    Individual = 0,
+    CampaignCreator = 1,
+    Backer = 2,
+}
+
+/// Individual KYC verification request
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KycRequest {
+    pub id: u64,
+    pub subject: Address,
+    pub verification_type: VerificationType,
+    pub submitted_at: u64,
+    pub reviewed_at: u64,
+    pub reviewer: Address,
+    pub status: VerificationStatus,
+    pub document_count: u32,
+    pub metadata: String,
+}
+
+/// Campaign-level KYC verification status
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignKycStatus {
+    pub campaign_id: u64,
+    pub creator: Address,
+    pub kyc_status: VerificationStatus,
+    pub min_backer_kyc_required: bool,
+    pub created_at: u64,
+    pub verified_at: u64,
+    pub verified_by: Address,
+}
+
+/// Backer contribution and KYC tracking
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackerKycStatus {
+    pub backer: Address,
+    pub kyc_status: VerificationStatus,
+    pub campaigns_backed: u64,
+    pub total_backed_amount: i128,
+    pub last_kyc_check: u64,
+}
+
+/// Auto-withdrawal threshold configuration for a merchant token pair
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
