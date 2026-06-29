@@ -1004,3 +1004,222 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+
+// ── KYC/Verification System Events ────────────────────────────────────────────
+
+#[contractevent]
+pub struct KycRequestSubmittedEvent {
+    pub request_id: u64,
+    pub subject: Address,
+    pub verification_type: crate::types::VerificationType,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_request_submitted_event(
+    env: &Env,
+    request_id: u64,
+    subject: Address,
+    verification_type: crate::types::VerificationType,
+    timestamp: u64,
+) {
+    KycRequestSubmittedEvent {
+        request_id,
+        subject,
+        verification_type,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct KycRequestApprovedEvent {
+    pub request_id: u64,
+    pub subject: Address,
+    pub reviewer: Address,
+    pub expiration_date: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_request_approved_event(
+    env: &Env,
+    request_id: u64,
+    subject: Address,
+    reviewer: Address,
+    expiration_date: u64,
+    timestamp: u64,
+) {
+    KycRequestApprovedEvent {
+        request_id,
+        subject,
+        reviewer,
+        expiration_date,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct KycRequestRejectedEvent {
+    pub request_id: u64,
+    pub subject: Address,
+    pub reviewer: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_request_rejected_event(
+    env: &Env,
+    request_id: u64,
+    subject: Address,
+    reviewer: Address,
+    reason: String,
+    timestamp: u64,
+) {
+    KycRequestRejectedEvent {
+        request_id,
+        subject,
+        reviewer,
+        reason,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct KycSuspendedEvent {
+    pub subject: Address,
+    pub reviewer: Address,
+    pub reason: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_suspended_event(
+    env: &Env,
+    subject: Address,
+    reviewer: Address,
+    reason: String,
+    timestamp: u64,
+) {
+    KycSuspendedEvent {
+        subject,
+        reviewer,
+        reason,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignKycRegisteredEvent {
+    pub campaign_id: u64,
+    pub creator: Address,
+    pub require_backer_kyc: bool,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_kyc_registered_event(
+    env: &Env,
+    campaign_id: u64,
+    creator: Address,
+    require_backer_kyc: bool,
+    timestamp: u64,
+) {
+    CampaignKycRegisteredEvent {
+        campaign_id,
+        creator,
+        require_backer_kyc,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignKycVerifiedEvent {
+    pub campaign_id: u64,
+    pub creator: Address,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_kyc_verified_event(
+    env: &Env,
+    campaign_id: u64,
+    creator: Address,
+    reviewer: Address,
+    timestamp: u64,
+) {
+    CampaignKycVerifiedEvent {
+        campaign_id,
+        creator,
+        reviewer,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BackerContributionRecordedEvent {
+    pub backer: Address,
+    pub campaign_id: u64,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_contribution_recorded_event(
+    env: &Env,
+    backer: Address,
+    campaign_id: u64,
+    amount: i128,
+    timestamp: u64,
+) {
+    BackerContributionRecordedEvent {
+        backer,
+        campaign_id,
+        amount,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct KycReviewerRoleGrantedEvent {
+    pub admin: Address,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_reviewer_role_granted_event(
+    env: &Env,
+    admin: Address,
+    reviewer: Address,
+    timestamp: u64,
+) {
+    KycReviewerRoleGrantedEvent {
+        admin,
+        reviewer,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct KycReviewerRoleRevokedEvent {
+    pub admin: Address,
+    pub reviewer: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_kyc_reviewer_role_revoked_event(
+    env: &Env,
+    admin: Address,
+    reviewer: Address,
+    timestamp: u64,
+) {
+    KycReviewerRoleRevokedEvent {
+        admin,
+        reviewer,
+        timestamp,
+    }
+    .publish(env);
+}

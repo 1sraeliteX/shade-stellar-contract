@@ -4,6 +4,7 @@ pub mod admin;
 pub mod auto_withdrawal;
 pub mod core;
 pub mod invoice;
+pub mod kyc_v2;
 pub mod merchant;
 pub mod pausable;
 pub mod payment;

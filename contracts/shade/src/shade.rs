@@ -1,16 +1,17 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
-    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
-    subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    invoice as invoice_component, kyc_v2 as kyc_component, merchant as merchant_component,
+    pausable as pausable_component, subscription as subscription_component,
+    upgrade as upgrade_component, history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    BackerKycStatus, CampaignKycStatus, ContractInfo, CrossChainBridgePayload, DataKey, Event,
+    Invoice, InvoiceFilter, KycRequest, Merchant, MerchantAnalytics, MerchantAnalyticsSummary,
+    MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role, Subscription,
+    SubscriptionPlan, Ticket, TokenAnalytics, Transaction, VerificationStatus, VerificationType,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -571,5 +572,91 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    // ── KYC/Verification System ────────────────────────────────────────────
+
+    fn submit_kyc_verification(
+        env: Env,
+        subject: Address,
+        verification_type: VerificationType,
+        metadata: String,
+    ) -> u64 {
+        kyc_component::submit_kyc_verification(&env, &subject, verification_type, &metadata)
+    }
+
+    fn approve_kyc_request(
+        env: Env,
+        reviewer: Address,
+        request_id: u64,
+        expiration_days: u64,
+    ) {
+        kyc_component::approve_kyc_request(&env, &reviewer, request_id, expiration_days)
+    }
+
+    fn reject_kyc_request(env: Env, reviewer: Address, request_id: u64, reason: String) {
+        kyc_component::reject_kyc_request(&env, &reviewer, request_id, &reason)
+    }
+
+    fn suspend_kyc(env: Env, reviewer: Address, subject: Address, reason: String) {
+        kyc_component::suspend_kyc(&env, &reviewer, &subject, &reason)
+    }
+
+    fn get_kyc_status(env: Env, subject: Address) -> VerificationStatus {
+        kyc_component::get_kyc_status(&env, &subject)
+    }
+
+    fn get_kyc_request(env: Env, request_id: u64) -> KycRequest {
+        kyc_component::get_kyc_request(&env, request_id)
+    }
+
+    fn is_kyc_approved(env: Env, subject: Address) -> bool {
+        kyc_component::is_kyc_approved(&env, &subject)
+    }
+
+    fn is_kyc_expired(env: Env, subject: Address) -> bool {
+        kyc_component::is_kyc_expired(&env, &subject)
+    }
+
+    fn register_campaign_for_kyc(
+        env: Env,
+        creator: Address,
+        campaign_id: u64,
+        require_backer_kyc: bool,
+    ) {
+        kyc_component::register_campaign_for_kyc(&env, &creator, campaign_id, require_backer_kyc)
+    }
+
+    fn verify_campaign(env: Env, reviewer: Address, campaign_id: u64) {
+        kyc_component::verify_campaign(&env, &reviewer, campaign_id)
+    }
+
+    fn get_campaign_kyc_status(env: Env, campaign_id: u64) -> CampaignKycStatus {
+        kyc_component::get_campaign_kyc_status(&env, campaign_id)
+    }
+
+    fn record_backer_contribution(
+        env: Env,
+        backer: Address,
+        campaign_id: u64,
+        amount: i128,
+    ) {
+        kyc_component::record_backer_contribution(&env, &backer, campaign_id, amount)
+    }
+
+    fn get_backer_kyc_status(env: Env, backer: Address) -> BackerKycStatus {
+        kyc_component::get_backer_kyc_status(&env, &backer)
+    }
+
+    fn grant_kyc_reviewer_role(env: Env, admin: Address, reviewer: Address) {
+        kyc_component::grant_kyc_reviewer_role(&env, &admin, &reviewer)
+    }
+
+    fn revoke_kyc_reviewer_role(env: Env, admin: Address, reviewer: Address) {
+        kyc_component::revoke_kyc_reviewer_role(&env, &admin, &reviewer)
+    }
+
+    fn has_kyc_reviewer_role(env: Env, user: Address) -> bool {
+        kyc_component::has_kyc_reviewer_role(&env, &user)
     }
 }

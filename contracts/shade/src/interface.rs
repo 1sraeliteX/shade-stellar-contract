@@ -1,7 +1,8 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    BackerKycStatus, CampaignKycStatus, CrossChainBridgePayload, Event, Invoice, InvoiceFilter,
+    KycRequest, Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction, VerificationStatus, VerificationType,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +235,74 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── KYC/Verification System ────────────────────────────────────────────
+
+    /// Submit a KYC verification request
+    fn submit_kyc_verification(
+        env: Env,
+        subject: Address,
+        verification_type: VerificationType,
+        metadata: String,
+    ) -> u64;
+
+    /// Approve a KYC verification request (reviewer only)
+    fn approve_kyc_request(
+        env: Env,
+        reviewer: Address,
+        request_id: u64,
+        expiration_days: u64,
+    );
+
+    /// Reject a KYC verification request (reviewer only)
+    fn reject_kyc_request(env: Env, reviewer: Address, request_id: u64, reason: String);
+
+    /// Suspend a user's KYC approval (reviewer only)
+    fn suspend_kyc(env: Env, reviewer: Address, subject: Address, reason: String);
+
+    /// Get the KYC status of a user
+    fn get_kyc_status(env: Env, subject: Address) -> VerificationStatus;
+
+    /// Get a KYC request by ID
+    fn get_kyc_request(env: Env, request_id: u64) -> KycRequest;
+
+    /// Check if a user's KYC is approved and not expired
+    fn is_kyc_approved(env: Env, subject: Address) -> bool;
+
+    /// Check if a user's KYC has expired
+    fn is_kyc_expired(env: Env, subject: Address) -> bool;
+
+    /// Register a campaign for KYC verification (creator only)
+    fn register_campaign_for_kyc(
+        env: Env,
+        creator: Address,
+        campaign_id: u64,
+        require_backer_kyc: bool,
+    );
+
+    /// Verify a campaign's KYC (reviewer only)
+    fn verify_campaign(env: Env, reviewer: Address, campaign_id: u64);
+
+    /// Get campaign KYC status
+    fn get_campaign_kyc_status(env: Env, campaign_id: u64) -> CampaignKycStatus;
+
+    /// Record a backer's contribution to a campaign (internal use)
+    fn record_backer_contribution(
+        env: Env,
+        backer: Address,
+        campaign_id: u64,
+        amount: i128,
+    );
+
+    /// Get backer KYC status
+    fn get_backer_kyc_status(env: Env, backer: Address) -> BackerKycStatus;
+
+    /// Grant KYC reviewer role to a user (admin only)
+    fn grant_kyc_reviewer_role(env: Env, admin: Address, reviewer: Address);
+
+    /// Revoke KYC reviewer role from a user (admin only)
+    fn revoke_kyc_reviewer_role(env: Env, admin: Address, reviewer: Address);
+
+    /// Check if a user has KYC reviewer role
+    fn has_kyc_reviewer_role(env: Env, user: Address) -> bool;
 }

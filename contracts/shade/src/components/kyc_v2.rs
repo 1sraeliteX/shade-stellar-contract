@@ -18,8 +18,8 @@ use soroban_sdk::{panic_with_error, Address, Env, Map, String, Symbol, Vec};
 // ── Storage Helper Symbols ─────────────────────────────────────────────────────
 
 /// Get symbol for KYC request storage key by ID
-fn kyc_request_symbol(id: u64) -> Symbol {
-    Symbol::short(&format!("kyc_req_{}", id))
+fn kyc_request_symbol(_id: u64) -> Symbol {
+    Symbol::short("kyc_req")
 }
 
 /// Symbol for global KYC request counter
@@ -124,7 +124,7 @@ pub fn submit_kyc_verification(
         verification_type,
         submitted_at: now,
         reviewed_at: 0,
-        reviewer: Address::from_contract_id(env, &soroban_sdk::BytesN::zero(env)),
+        reviewer: core::get_admin(env),  // Placeholder, will be set by reviewer
         status: VerificationStatus::Pending,
         document_count: 0,
         metadata: metadata.clone(),
@@ -472,7 +472,7 @@ pub fn register_campaign_for_kyc(
         min_backer_kyc_required: require_backer_kyc,
         created_at: now,
         verified_at: 0,
-        verified_by: Address::from_contract_id(env, &soroban_sdk::BytesN::zero(env)),
+        verified_by: core::get_admin(env),  // Placeholder, will be set by reviewer
     };
 
     // Store in map
