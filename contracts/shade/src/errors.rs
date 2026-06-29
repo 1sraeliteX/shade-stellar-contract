@@ -53,4 +53,10 @@ pub enum ContractError {
     NotTicketOwner = 52,
     TicketEventMismatch = 53,
     InvalidResalePrice = 54,
+    // --- Campaign announcements (Issue #335) ---
+    CampaignNotFound = 55,
+    CampaignNotActive = 56,
+    CampaignEnded = 57,
+    InvalidCampaignEndDate = 58,
+    NotCampaignMerchant = 59,
 }

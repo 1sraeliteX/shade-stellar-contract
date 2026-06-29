@@ -1,7 +1,8 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    Campaign, CampaignAnnouncement, CrossChainBridgePayload, Event, Invoice, InvoiceFilter,
+    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
+    PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
+    Transaction,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +235,56 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Campaign announcements (Issue #335) ───────────────────────────────────
+
+    /// Create an on-chain campaign for a registered, active merchant.
+    /// `goal_amount` is in token base units; pass 0 for open-ended campaigns.
+    /// `end_date` must be a future ledger timestamp.
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        description: String,
+        goal_amount: i128,
+        token: Address,
+        end_date: u64,
+    ) -> u64;
+
+    /// Fetch the full Campaign struct by ID.
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign;
+
+    /// Return the ordered list of campaign IDs belonging to a merchant.
+    fn get_merchant_campaigns(env: Env, merchant: Address) -> Vec<u64>;
+
+    /// Update mutable campaign fields (title, description, end_date).
+    /// Only the campaign's owning merchant may call this.
+    fn update_campaign(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        description: String,
+        end_date: u64,
+    );
+
+    /// Cancel an active campaign.
+    /// Either the campaign's merchant or the contract admin may cancel.
+    fn cancel_campaign(env: Env, caller: Address, campaign_id: u64);
+
+    /// Mark an active campaign as ended (successfully closed by the merchant).
+    fn end_campaign(env: Env, merchant: Address, campaign_id: u64);
+
+    /// Post a new update announcement on an active campaign.
+    /// Returns the global announcement ID.
+    fn post_campaign_announcement(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        content: String,
+    ) -> u64;
+
+    /// Return all announcements posted on a campaign in chronological order.
+    fn get_campaign_announcements(env: Env, campaign_id: u64) -> Vec<CampaignAnnouncement>;
 }

@@ -1004,3 +1004,139 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Campaign announcements (Issue #335) ──────────────────────────────────────
+
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub title: String,
+    pub goal_amount: i128,
+    pub token: Address,
+    pub end_date: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    title: String,
+    goal_amount: i128,
+    token: Address,
+    end_date: u64,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        title,
+        goal_amount,
+        token,
+        end_date,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignUpdatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub title: String,
+    pub description: String,
+    pub end_date: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_updated_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    title: String,
+    description: String,
+    end_date: u64,
+    timestamp: u64,
+) {
+    CampaignUpdatedEvent {
+        campaign_id,
+        merchant,
+        title,
+        description,
+        end_date,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignCancelledEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_cancelled_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    cancelled_by: Address,
+    timestamp: u64,
+) {
+    CampaignCancelledEvent {
+        campaign_id,
+        merchant,
+        cancelled_by,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignEndedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_ended_event(env: &Env, campaign_id: u64, merchant: Address, timestamp: u64) {
+    CampaignEndedEvent {
+        campaign_id,
+        merchant,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignAnnouncementPostedEvent {
+    pub announcement_id: u64,
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub title: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_announcement_posted_event(
+    env: &Env,
+    announcement_id: u64,
+    campaign_id: u64,
+    merchant: Address,
+    title: String,
+    timestamp: u64,
+) {
+    CampaignAnnouncementPostedEvent {
+        announcement_id,
+        campaign_id,
+        merchant,
+        title,
+        timestamp,
+    }
+    .publish(env);
+}

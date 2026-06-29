@@ -1,16 +1,17 @@
 use crate::components::{
-    access_control as access_control_component, admin as admin_component, core as core_component,
+    access_control as access_control_component, admin as admin_component,
+    campaign as campaign_component, core as core_component, history as history_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    Campaign, CampaignAnnouncement, ContractInfo, CrossChainBridgePayload, DataKey, Event,
+    Invoice, InvoiceFilter, Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -571,5 +572,73 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    // ── Campaign announcements (Issue #335) ───────────────────────────────────
+
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        description: String,
+        goal_amount: i128,
+        token: Address,
+        end_date: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::create_campaign(
+            &env,
+            &merchant,
+            &title,
+            &description,
+            goal_amount,
+            &token,
+            end_date,
+        )
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        campaign_component::get_campaign(&env, campaign_id)
+    }
+
+    fn get_merchant_campaigns(env: Env, merchant: Address) -> Vec<u64> {
+        campaign_component::get_merchant_campaigns(&env, &merchant)
+    }
+
+    fn update_campaign(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        description: String,
+        end_date: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::update_campaign(&env, &merchant, campaign_id, &title, &description, end_date);
+    }
+
+    fn cancel_campaign(env: Env, caller: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::cancel_campaign(&env, &caller, campaign_id);
+    }
+
+    fn end_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::end_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn post_campaign_announcement(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        content: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::post_campaign_announcement(&env, &merchant, campaign_id, &title, &content)
+    }
+
+    fn get_campaign_announcements(env: Env, campaign_id: u64) -> Vec<CampaignAnnouncement> {
+        campaign_component::get_campaign_announcements(&env, campaign_id)
     }
 }
