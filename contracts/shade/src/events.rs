@@ -1004,3 +1004,171 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Pledge / crowdfund campaign events ────────────────────────────────────────
+
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub title: String,
+    pub goal: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    title: String,
+    goal: i128,
+    token: Address,
+    deadline: u64,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        title,
+        goal,
+        token,
+        deadline,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct PledgeMadeEvent {
+    pub pledge_id: u64,
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_pledge_made_event(
+    env: &Env,
+    pledge_id: u64,
+    campaign_id: u64,
+    contributor: Address,
+    amount: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    PledgeMadeEvent {
+        pledge_id,
+        campaign_id,
+        contributor,
+        amount,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignExecutedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub total_raised: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_executed_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    total_raised: i128,
+    timestamp: u64,
+) {
+    CampaignExecutedEvent {
+        campaign_id,
+        merchant,
+        total_raised,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignCancelledEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_cancelled_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    timestamp: u64,
+) {
+    CampaignCancelledEvent {
+        campaign_id,
+        merchant,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct PledgeRefundedEvent {
+    pub pledge_id: u64,
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_pledge_refunded_event(
+    env: &Env,
+    pledge_id: u64,
+    campaign_id: u64,
+    contributor: Address,
+    amount: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    PledgeRefundedEvent {
+        pledge_id,
+        campaign_id,
+        contributor,
+        amount,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignBatchRefundedEvent {
+    pub campaign_id: u64,
+    pub total_refunded: i128,
+    pub contributor_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_batch_refunded_event(
+    env: &Env,
+    campaign_id: u64,
+    total_refunded: i128,
+    contributor_count: u32,
+    timestamp: u64,
+) {
+    CampaignBatchRefundedEvent {
+        campaign_id,
+        total_refunded,
+        contributor_count,
+        timestamp,
+    }
+    .publish(env);
+}

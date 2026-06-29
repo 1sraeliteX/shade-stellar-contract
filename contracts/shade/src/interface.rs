@@ -1,7 +1,7 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    Campaign, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    PendingFee, Pledge, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +234,53 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Pledge / crowdfund campaign system ────────────────────────────────────
+
+    /// Create a new fundraising campaign. Only an active registered merchant may call this.
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        goal: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64;
+
+    /// Fetch a campaign by ID.
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign;
+
+    /// Pledge tokens to an active campaign.
+    /// Transfers `amount` of `token` from contributor to the merchant's account.
+    fn pledge(
+        env: Env,
+        contributor: Address,
+        campaign_id: u64,
+        amount: i128,
+        token: Address,
+    ) -> u64;
+
+    /// After the deadline, if the goal has been met, the merchant may mark the
+    /// campaign as executed and withdraw the raised funds.
+    fn execute_campaign(env: Env, merchant: Address, campaign_id: u64);
+
+    /// Cancel an active campaign before the deadline. Only the campaign owner
+    /// (merchant) may call this.
+    fn cancel_campaign(env: Env, merchant: Address, campaign_id: u64);
+
+    /// Individual backer refund after a failed campaign (goal not met).
+    /// Refunds all active pledges for the caller in the given campaign.
+    fn claim_refund(env: Env, contributor: Address, campaign_id: u64);
+
+    /// Batch refund all backers in a failed campaign. Callable by anyone.
+    fn batch_refund(env: Env, campaign_id: u64);
+
+    /// Fetch a pledge by ID.
+    fn get_pledge(env: Env, pledge_id: u64) -> Pledge;
+
+    /// Get all pledges for a given campaign.
+    fn get_campaign_pledges(env: Env, campaign_id: u64) -> Vec<Pledge>;
+
+    /// Get all pledges made by a given contributor across all campaigns.
+    fn get_contributor_pledges(env: Env, contributor: Address) -> Vec<Pledge>;
 }

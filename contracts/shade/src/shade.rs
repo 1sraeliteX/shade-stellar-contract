@@ -1,16 +1,16 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
-    subscription as subscription_component, upgrade as upgrade_component,
+    pledge as pledge_component, subscription as subscription_component, upgrade as upgrade_component,
     history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    Campaign, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter,
+    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PendingFee,
+    Pledge, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -571,5 +571,66 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    // ── Pledge / crowdfund campaign system ────────────────────────────────────
+
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        goal: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::create_campaign(&env, &merchant, &title, goal, &token, deadline)
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        pledge_component::get_campaign(&env, campaign_id)
+    }
+
+    fn pledge(
+        env: Env,
+        contributor: Address,
+        campaign_id: u64,
+        amount: i128,
+        token: Address,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::pledge(&env, &contributor, campaign_id, amount, &token)
+    }
+
+    fn execute_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::execute_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn cancel_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::cancel_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn claim_refund(env: Env, contributor: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::claim_refund(&env, &contributor, campaign_id);
+    }
+
+    fn batch_refund(env: Env, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::batch_refund(&env, campaign_id);
+    }
+
+    fn get_pledge(env: Env, pledge_id: u64) -> Pledge {
+        pledge_component::get_pledge(&env, pledge_id)
+    }
+
+    fn get_campaign_pledges(env: Env, campaign_id: u64) -> Vec<Pledge> {
+        pledge_component::get_campaign_pledges(&env, campaign_id)
+    }
+
+    fn get_contributor_pledges(env: Env, contributor: Address) -> Vec<Pledge> {
+        pledge_component::get_contributor_pledges(&env, &contributor)
     }
 }

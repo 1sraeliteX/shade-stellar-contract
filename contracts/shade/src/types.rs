@@ -47,6 +47,13 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Pledge / crowdfund campaign system ---
+    Campaign(u64),
+    CampaignCount,
+    Pledge(u64),
+    PledgeCount,
+    CampaignPledges(u64),
+    ContributorPledges(Address),
 }
 
 #[contracttype]
@@ -357,4 +364,51 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// --- Pledge / crowdfund campaign types ---
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum CampaignStatus {
+    Active = 0,
+    Executed = 1,
+    Cancelled = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Campaign {
+    pub id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub title: soroban_sdk::String,
+    pub goal: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub raised: i128,
+    pub status: CampaignStatus,
+    pub date_created: u64,
+    pub refunds_processed: bool,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum PledgeStatus {
+    Active = 0,
+    Refunded = 1,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pledge {
+    pub id: u64,
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub status: PledgeStatus,
+    pub timestamp: u64,
 }
