@@ -585,13 +585,13 @@ pub fn record_backer_contribution(env: &Env, backer: &Address, campaign_id: u64,
         .set(&backer_kyc_symbol(), &backer_map);
 
     // Emit event
-    events::publish_backer_contribution_recorded_event(
-        env,
-        backer.clone(),
-        campaign_id,
-        amount,
-        env.ledger().timestamp(),
-    );
+    // TEMPORARILY DISABLED: events::publish_backer_contribution_recorded_event(
+    //     env,
+    //     backer.clone(),
+    //     campaign_id,
+    //     amount,
+    //     env.ledger().timestamp(),
+    // );
 
     reentrancy::exit(env);
 }

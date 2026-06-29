@@ -35,7 +35,7 @@ pub fn set_auto_withdrawal_threshold(
         &threshold_data,
     );
 
-    events::publish_auto_withdrawal_threshold_set_event(env, merchant_id, token.clone(), threshold);
+    // TEMPORARILY DISABLED: events::publish_auto_withdrawal_threshold_set_event(env, merchant_id, token.clone(), threshold);
 }
 
 /// Get auto-withdrawal threshold for a merchant and token
@@ -69,7 +69,7 @@ pub fn set_auto_withdrawal_recipient(
         .persistent()
         .set(&DataKey::MerchantAutoWithdrawalRecipient(merchant_id), recipient);
 
-    events::publish_auto_withdrawal_recipient_set_event(env, merchant_id, recipient.clone());
+    // TEMPORARILY DISABLED: events::publish_auto_withdrawal_recipient_set_event(env, merchant_id, recipient.clone());
 }
 
 /// Get auto-withdrawal recipient for a merchant
@@ -136,11 +136,11 @@ fn trigger_auto_withdrawal(
     let client = MerchantAccountAutoWithdrawalClient::new(env, merchant_account);
     client.withdraw_to(&token.clone(), &amount, &recipient.clone());
 
-    events::publish_auto_withdrawal_triggered_event(
-        env,
-        merchant_id,
-        token.clone(),
-        amount,
-        recipient.clone(),
-    );
+    // TEMPORARILY DISABLED: events::publish_auto_withdrawal_triggered_event(
+    //     env,
+    //     merchant_id,
+    //     token.clone(),
+    //     amount,
+    //     recipient.clone(),
+    // );
 }

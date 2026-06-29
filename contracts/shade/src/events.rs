@@ -1158,6 +1158,7 @@ pub fn publish_campaign_kyc_verified_event(
     .publish(env);
 }
 
+/*
 #[contractevent]
 pub struct BackerContributionRecordedEvent {
     pub backer: Address,
@@ -1165,7 +1166,9 @@ pub struct BackerContributionRecordedEvent {
     pub amount: i128,
     pub timestamp: u64,
 }
+*/
 
+/*
 pub fn publish_backer_contribution_recorded_event(
     env: &Env,
     backer: Address,
@@ -1181,6 +1184,7 @@ pub fn publish_backer_contribution_recorded_event(
     }
     .publish(env);
 }
+*/
 
 #[contractevent]
 pub struct KycReviewerRoleGrantedEvent {
