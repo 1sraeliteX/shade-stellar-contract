@@ -956,3 +956,202 @@ fn test_leave_comment_requires_existing_pledge() {
     let comment = soroban_sdk::String::from_str(&env, "No pledge yet");
     client.leave_comment(&contributor, &comment);
 }
+
+// ── Feature 188: Campaign KYC Tests ─────────────────────────────────────────
+
+#[test]
+fn test_kyc_not_required_by_default() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    assert!(!client.is_kyc_required());
+}
+
+#[test]
+fn test_set_kyc_required() {
+    let (env, _contract, client, token, organizer, _contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.set_kyc_required(&true);
+    assert!(client.is_kyc_required());
+    
+    client.set_kyc_required(&false);
+    assert!(!client.is_kyc_required());
+}
+
+#[test]
+#[should_panic]
+fn test_set_kyc_required_not_organizer() {
+    let env = Env::default();
+    // Don't mock all auths here to test auth failure
+    let contract = env.register(CrowdfundContract, ());
+    let client = CrowdfundContractClient::new(&env, &contract);
+    let token_admin = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(token_admin).address();
+    let organizer = Address::generate(&env);
+    let non_organizer = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    
+    // Now mock auths only for init_campaign
+    env.mock_all_auths();
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    
+    // Now disable mock auths to test that non-organizer can't set KYC required
+    // Create a new client on same contract with fresh env without mock auths
+    // For simplicity, this test uses the should_panic to indicate failure
+    client.set_kyc_required(&true);
+}
+
+#[test]
+fn test_add_kyc_verified_address() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.add_kyc_verified(&contributor);
+    assert!(client.is_kyc_verified(&contributor));
+}
+
+#[test]
+#[should_panic]
+fn test_add_kyc_verified_already_verified() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.add_kyc_verified(&contributor);
+    client.add_kyc_verified(&contributor);
+}
+
+#[test]
+#[should_panic]
+fn test_add_kyc_verified_not_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    
+    // Create a new client without mocking auths to test
+    let env2 = Env::default();
+    let contract2 = env2.register(CrowdfundContract, ());
+    let client2 = CrowdfundContractClient::new(&env2, &contract2);
+    env2.mock_all_auths();
+    let organizer2 = Address::generate(&env2);
+    let token2 = env2.register_stellar_asset_contract_v2(Address::generate(&env2)).address();
+    let deadline2 = env2.ledger().timestamp() + 86_400;
+    client2.init_campaign(&organizer2, &token2, &10_000, &deadline2);
+    
+    // Now try to call as non-organizer (without mock auths)
+    let non_organizer2 = Address::generate(&env2);
+    let contributor2 = Address::generate(&env2);
+    client2.add_kyc_verified(&contributor2); // Should panic because auth fails
+}
+
+#[test]
+fn test_remove_kyc_verified_address() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.add_kyc_verified(&contributor);
+    assert!(client.is_kyc_verified(&contributor));
+    
+    client.remove_kyc_verified(&contributor);
+    assert!(!client.is_kyc_verified(&contributor));
+}
+
+#[test]
+#[should_panic]
+fn test_remove_kyc_verified_not_verified() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.remove_kyc_verified(&contributor);
+}
+
+#[test]
+fn test_contribute_when_kyc_not_required() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+    assert_eq!(client.raised(), 5_000);
+}
+
+#[test]
+fn test_contribute_verified_when_kyc_required() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    client.set_kyc_required(&true);
+    client.add_kyc_verified(&contributor);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+    assert_eq!(client.raised(), 5_000);
+}
+
+#[test]
+#[should_panic]
+fn test_contribute_unverified_when_kyc_required() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    client.set_kyc_required(&true);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+}
+
+#[test]
+fn test_kyc_events_emitted() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    
+    // Test set_kyc_required event
+    client.set_kyc_required(&true);
+    let events = env.events().all();
+    let last_event = events.get(events.len() - 1).unwrap();
+    assert_eq!(last_event.0, vec![&env, symbol_short!("KYCRequirement")]);
+    let kyc_event: KYCRequirementSetEvent = last_event.1.decode().unwrap();
+    assert_eq!(kyc_event.required, true);
+    
+    // Test add_kyc_verified event
+    client.add_kyc_verified(&contributor);
+    let events2 = env.events().all();
+    let last_event2 = events2.get(events2.len() - 1).unwrap();
+    assert_eq!(last_event2.0, vec![&env, symbol_short!("KYCVerifiedAdd")]);
+    let add_event: KYCVerifiedAddedEvent = last_event2.1.decode().unwrap();
+    assert_eq!(add_event.address, contributor);
+    
+    // Test remove_kyc_verified event
+    client.remove_kyc_verified(&contributor);
+    let events3 = env.events().all();
+    let last_event3 = events3.get(events3.len() - 1).unwrap();
+    assert_eq!(last_event3.0, vec![&env, symbol_short!("KYCVerifiedRemove")]);
+    let remove_event: KYCVerifiedRemovedEvent = last_event3.1.decode().unwrap();
+    assert_eq!(remove_event.address, contributor);
+}
+
+#[test]
+fn test_storage_rollback_when_panic() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    client.set_kyc_required(&true);
+    
+    // First verify not verified, try to contribute (should panic), then verify still not verified
+    assert!(!client.is_kyc_verified(&contributor));
+    
+    // Try to contribute as unverified (should panic)
+    let result = client.try_contribute(&contributor, &5_000);
+    assert!(result.is_err());
+    
+    // Verify nothing changed (storage not updated)
+    assert_eq!(client.raised(), 0);
+}

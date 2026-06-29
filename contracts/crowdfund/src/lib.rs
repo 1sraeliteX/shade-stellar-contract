@@ -103,6 +103,21 @@ pub struct BatchRefundProcessedEvent {
     pub contributor_count: u32,
 }
 
+#[contractevent]
+pub struct KYCRequirementSetEvent {
+    pub required: bool,
+}
+
+#[contractevent]
+pub struct KYCVerifiedAddedEvent {
+    pub address: Address,
+}
+
+#[contractevent]
+pub struct KYCVerifiedRemovedEvent {
+    pub address: Address,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -149,6 +164,10 @@ enum DataKey {
     MatchingPool,
     // Public comment attached to a contributor pledge.
     PledgeComment(Address),
+    // Whether KYC is required for contributions.
+    KYCRequired,
+    // Whether an address is KYC verified.
+    KYCVerified(Address),
 }
 
 #[contract]
@@ -157,6 +176,57 @@ pub struct CrowdfundContract;
 #[contractimpl]
 impl CrowdfundContract {
     const MAX_COMMENT_BYTES: u32 = 280;
+    
+    /// Set whether KYC is required for contributions.
+    /// Only callable by the organizer.
+    pub fn set_kyc_required(env: Env, required: bool) {
+        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        organizer.require_auth();
+        env.storage().persistent().set(&DataKey::KYCRequired, &required);
+        KYCRequirementSetEvent { required }.publish(&env);
+    }
+    
+    /// Check whether KYC is required for this campaign.
+    pub fn is_kyc_required(env: Env) -> bool {
+        env.storage().persistent().get(&DataKey::KYCRequired).unwrap_or(false)
+    }
+    
+    /// Add an address to the KYC verified whitelist.
+    /// Only callable by the organizer.
+    pub fn add_kyc_verified(env: Env, address: Address) {
+        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        organizer.require_auth();
+        
+        if env.storage().persistent().has(&DataKey::KYCVerified(address.clone())) {
+            panic_with_error!(&env, CrowdfundError::AlreadyKYCVerified);
+        }
+        
+        env.storage().persistent().set(&DataKey::KYCVerified(address.clone()), &true);
+        KYCVerifiedAddedEvent { address }.publish(&env);
+    }
+    
+    /// Remove an address from the KYC verified whitelist.
+    /// Only callable by the organizer.
+    pub fn remove_kyc_verified(env: Env, address: Address) {
+        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        organizer.require_auth();
+        
+        if !env.storage().persistent().has(&DataKey::KYCVerified(address.clone())) {
+            panic_with_error!(&env, CrowdfundError::NotKYCVerified);
+        }
+        
+        env.storage().persistent().remove(&DataKey::KYCVerified(address.clone()));
+        KYCVerifiedRemovedEvent { address }.publish(&env);
+    }
+    
+    /// Check whether an address is KYC verified for this campaign.
+    pub fn is_kyc_verified(env: Env, address: Address) -> bool {
+        env.storage().persistent().get(&DataKey::KYCVerified(address)).unwrap_or(false)
+    }
+    
     /// Initialise a campaign. Sets the funding goal (in token base units)
     /// and the deadline (Unix timestamp after which no contributions are
     /// accepted). Only callable once.
@@ -191,6 +261,7 @@ impl CrowdfundContract {
         env.storage().persistent().set(&DataKey::Executed, &false);
         env.storage().persistent().set(&DataKey::RefundProcessed, &false);
         env.storage().persistent().set(&DataKey::Contributors, &Vec::<Address>::new(&env));
+        env.storage().persistent().set(&DataKey::KYCRequired, &false);
     }
 
     /// Set the Shade gateway contract address. Only callable once by the organizer.
@@ -237,6 +308,11 @@ impl CrowdfundContract {
         if env.storage().persistent().get(&DataKey::Executed).unwrap_or(false) {
             panic_with_error!(&env, CrowdfundError::AlreadyExecuted);
         }
+        
+        // Check KYC requirements
+        if Self::is_kyc_required(env.clone()) && !Self::is_kyc_verified(env.clone(), contributor.clone()) {
+            panic_with_error!(&env, CrowdfundError::KYCRequired);
+        }
 
         let shade_gateway: Address = env.storage().persistent().get(&DataKey::ShadeGateway)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::ShadeGatewayNotSet));
@@ -281,6 +357,11 @@ impl CrowdfundContract {
 
         if env.ledger().timestamp() > deadline {
             panic_with_error!(&env, CrowdfundError::CampaignEnded);
+        }
+        
+        // Check KYC requirements
+        if Self::is_kyc_required(env.clone()) && !Self::is_kyc_verified(env.clone(), contributor.clone()) {
+            panic_with_error!(&env, CrowdfundError::KYCRequired);
         }
 
         let token_addr: Address = env

@@ -52,4 +52,10 @@ pub enum CrowdfundError {
     InsufficientMatchingPool = 26,
     // Pledge comment exceeds the configured maximum length.
     CommentTooLong = 27,
+    // KYC is required for this action.
+    KYCRequired = 28,
+    // Address is already KYC verified.
+    AlreadyKYCVerified = 29,
+    // Address is not KYC verified.
+    NotKYCVerified = 30,
 }
