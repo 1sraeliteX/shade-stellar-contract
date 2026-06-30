@@ -92,6 +92,7 @@ pub struct PledgeCommentAddedEvent {
     pub comment: String,
 }
 
+#[contractevent]
 pub struct PledgeReceivedEvent {
     pub contributor: Address,
     pub amount: i128,
@@ -101,6 +102,46 @@ pub struct PledgeReceivedEvent {
 pub struct BatchRefundProcessedEvent {
     pub total_refunded: i128,
     pub contributor_count: u32,
+}
+
+/// Highly-detailed on-chain checkpoint of a campaign's aggregate statistics,
+/// emitted by the organizer to drive off-chain indexing and UI dashboards.
+#[contractevent]
+pub struct CampaignStatsSnapshotEvent {
+    pub caller: Address,
+    pub goal: i128,
+    pub raised: i128,
+    pub total_matched: i128,
+    pub matching_pool_balance: i128,
+    pub contributor_count: u32,
+    pub largest_pledge: i128,
+    pub percent_funded_bps: u32,
+    pub goal_reached: bool,
+    pub is_ended: bool,
+    pub timestamp: u64,
+}
+
+/// Aggregate, read-only statistics describing the current state of a campaign.
+/// All amounts are in token base units; `percent_funded_bps` is in basis
+/// points (10_000 = 100 %) and is saturated to `u32::MAX` for extreme
+/// overfunding. `seconds_remaining` is 0 once the deadline has passed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignStats {
+    pub goal: i128,
+    pub raised: i128,
+    pub total_matched: i128,
+    pub matching_pool_balance: i128,
+    pub contributor_count: u32,
+    pub average_pledge: i128,
+    pub largest_pledge: i128,
+    pub largest_backer: Option<Address>,
+    pub percent_funded_bps: u32,
+    pub deadline: u64,
+    pub seconds_remaining: u64,
+    pub is_ended: bool,
+    pub goal_reached: bool,
+    pub executed: bool,
 }
 
 #[contracttype]
@@ -149,6 +190,8 @@ enum DataKey {
     MatchingPool,
     // Public comment attached to a contributor pledge.
     PledgeComment(Address),
+    // Cumulative sponsor-matched amount applied to pledges over the campaign's life.
+    TotalMatched,
 }
 
 #[contract]
@@ -901,7 +944,184 @@ impl CrowdfundContract {
         raised >= goal
     }
 
+    // ── Deep campaign statistics (read-only views) ────────────────────────────
+
+    /// Public, read-only aggregate statistics for the campaign.
+    ///
+    /// Safe to call by anyone (no auth) and free of state mutation, so it is
+    /// concurrency-safe: concurrent callers observe a consistent snapshot of
+    /// the persisted ledger state. Panics with `NotInitialized` if no campaign
+    /// has been created.
+    pub fn get_campaign_stats(env: Env) -> CampaignStats {
+        Self::compute_stats(&env)
+    }
+
+    /// Organizer-only ranked list of backers by total pledge (descending),
+    /// truncated to `limit` entries. Exposes per-backer amounts, so it requires
+    /// the organizer's authorization (role-based check).
+    pub fn get_backer_leaderboard(env: Env, caller: Address, limit: u32) -> Vec<(Address, i128)> {
+        Self::require_organizer(&env, &caller);
+
+        let contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Collect (backer, pledge) pairs with a positive pledge.
+        let mut pairs: Vec<(Address, i128)> = Vec::new(&env);
+        for c in contributors.iter() {
+            let pledge: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Pledge(c.clone()))
+                .unwrap_or(0);
+            if pledge > 0 {
+                pairs.push_back((c, pledge));
+            }
+        }
+
+        // Partial selection sort: pull the top `limit` pledges to the front.
+        let n = pairs.len();
+        let take = if limit < n { limit } else { n };
+        let mut result: Vec<(Address, i128)> = Vec::new(&env);
+        for i in 0..take {
+            let mut max_idx = i;
+            let mut max_amt = pairs.get(i).unwrap().1;
+            for j in (i + 1)..n {
+                let amt = pairs.get(j).unwrap().1;
+                if amt > max_amt {
+                    max_amt = amt;
+                    max_idx = j;
+                }
+            }
+            if max_idx != i {
+                let a = pairs.get(i).unwrap();
+                let b = pairs.get(max_idx).unwrap();
+                pairs.set(i, b);
+                pairs.set(max_idx, a);
+            }
+            result.push_back(pairs.get(i).unwrap());
+        }
+        result
+    }
+
+    /// Organizer-only action that publishes a detailed `CampaignStatsSnapshotEvent`
+    /// for off-chain indexers/UIs and returns the current statistics. The call
+    /// reads (does not alter) campaign state, so it is safe under concurrency.
+    pub fn snapshot_campaign_stats(env: Env, caller: Address) -> CampaignStats {
+        Self::require_organizer(&env, &caller);
+        let stats = Self::compute_stats(&env);
+        CampaignStatsSnapshotEvent {
+            caller,
+            goal: stats.goal,
+            raised: stats.raised,
+            total_matched: stats.total_matched,
+            matching_pool_balance: stats.matching_pool_balance,
+            contributor_count: stats.contributor_count,
+            largest_pledge: stats.largest_pledge,
+            percent_funded_bps: stats.percent_funded_bps,
+            goal_reached: stats.goal_reached,
+            is_ended: stats.is_ended,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
+        stats
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /// Require that `caller` is the campaign organizer (authenticated).
+    fn require_organizer(env: &Env, caller: &Address) {
+        caller.require_auth();
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+        if *caller != organizer {
+            panic_with_error!(env, CrowdfundError::NotAuthorized);
+        }
+    }
+
+    /// Build the aggregate `CampaignStats` from persisted state.
+    fn compute_stats(env: &Env) -> CampaignStats {
+        let goal: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Goal)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+
+        let raised: i128 = env.storage().persistent().get(&DataKey::Raised).unwrap_or(0);
+        let total_matched: i128 =
+            env.storage().persistent().get(&DataKey::TotalMatched).unwrap_or(0);
+        let matching_pool_balance: i128 =
+            env.storage().persistent().get(&DataKey::MatchingPool).unwrap_or(0);
+        let executed: bool = env.storage().persistent().get(&DataKey::Executed).unwrap_or(false);
+
+        let contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(env));
+        let contributor_count = contributors.len();
+
+        // Largest pledge and its backer (read-only scan; accurate regardless of
+        // how individual pledges were accumulated).
+        let mut largest_pledge: i128 = 0;
+        let mut largest_backer: Option<Address> = None;
+        for c in contributors.iter() {
+            let pledge: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Pledge(c.clone()))
+                .unwrap_or(0);
+            if pledge > largest_pledge {
+                largest_pledge = pledge;
+                largest_backer = Some(c);
+            }
+        }
+
+        let average_pledge = if contributor_count > 0 {
+            raised / contributor_count as i128
+        } else {
+            0
+        };
+
+        let percent_funded_bps = if goal > 0 {
+            let bps = raised.saturating_mul(10_000) / goal;
+            bps.clamp(0, u32::MAX as i128) as u32
+        } else {
+            0
+        };
+
+        let now = env.ledger().timestamp();
+        let is_ended = now > deadline;
+        let seconds_remaining = if is_ended { 0 } else { deadline - now };
+        let goal_reached = raised >= goal;
+
+        CampaignStats {
+            goal,
+            raised,
+            total_matched,
+            matching_pool_balance,
+            contributor_count,
+            average_pledge,
+            largest_pledge,
+            largest_backer,
+            percent_funded_bps,
+            deadline,
+            seconds_remaining,
+            is_ended,
+            goal_reached,
+            executed,
+        }
+    }
 
     /// Emit a `stretch / reached` event for each milestone crossed by `new_raised`
     /// that has not already been triggered.
@@ -955,6 +1175,11 @@ impl CrowdfundContract {
                 &DataKey::MatchingPool,
                 &matching_pool.saturating_sub(matched_amount),
             );
+            let total_matched: i128 =
+                env.storage().persistent().get(&DataKey::TotalMatched).unwrap_or(0);
+            env.storage()
+                .persistent()
+                .set(&DataKey::TotalMatched, &total_matched.saturating_add(matched_amount));
             MatchAppliedEvent {
                 contributor: contributor.clone(),
                 matched_amount,

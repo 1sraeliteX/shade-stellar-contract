@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{vec, Address, Env};
 
@@ -955,4 +955,147 @@ fn test_leave_comment_requires_existing_pledge() {
 
     let comment = soroban_sdk::String::from_str(&env, "No pledge yet");
     client.leave_comment(&contributor, &comment);
+}
+
+// ── Deep campaign statistics (read-only views) ───────────────────────────────
+
+#[test]
+fn test_campaign_stats_aggregate_metrics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let contributor2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &3_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor2, &5_000);
+    client.contribute(&contributor, &3_000);
+    client.contribute(&contributor2, &5_000);
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.goal, 10_000);
+    assert_eq!(stats.raised, 8_000);
+    assert_eq!(stats.total_matched, 0);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.contributor_count, 2);
+    assert_eq!(stats.average_pledge, 4_000);
+    assert_eq!(stats.largest_pledge, 5_000);
+    assert_eq!(stats.largest_backer, Some(contributor2));
+    assert_eq!(stats.percent_funded_bps, 8_000); // 80%
+    assert_eq!(stats.deadline, deadline);
+    assert!(stats.seconds_remaining > 0);
+    assert!(!stats.is_ended);
+    assert!(!stats.goal_reached);
+    assert!(!stats.executed);
+}
+
+#[test]
+fn test_campaign_stats_reflects_matching_pool() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let sponsor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&sponsor, &1_000);
+    client.fund_matching_pool(&sponsor, &1_000);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_000);
+    client.contribute(&contributor, &2_000);
+
+    // 2_000 pledge fully matched by the 1_000 pool → effective 3_000.
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.raised, 3_000);
+    assert_eq!(stats.total_matched, 1_000);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.largest_pledge, 3_000);
+}
+
+#[test]
+fn test_campaign_stats_overfunded_and_ended() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 100;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_500);
+    client.contribute(&contributor, &2_500);
+
+    env.ledger().with_mut(|l| l.timestamp += 200); // past deadline
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.percent_funded_bps, 25_000); // 250%
+    assert!(stats.goal_reached);
+    assert!(stats.is_ended);
+    assert_eq!(stats.seconds_remaining, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_campaign_stats_before_init_panics() {
+    let (_env, _contract, client, _token, _organizer, _contributor) = setup();
+    client.get_campaign_stats();
+}
+
+#[test]
+fn test_backer_leaderboard_sorted_and_limited() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &100_000, &deadline);
+
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &9_000);
+    StellarAssetClient::new(&env, &token).mint(&c3, &4_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &9_000);
+    client.contribute(&c3, &4_000);
+
+    // Top 2 backers, descending by pledge.
+    let top = client.get_backer_leaderboard(&organizer, &2);
+    assert_eq!(top.len(), 2);
+    assert_eq!(top.get(0).unwrap(), (c2, 9_000));
+    assert_eq!(top.get(1).unwrap(), (c3, 4_000));
+
+    // A larger limit returns all backers without panicking.
+    let all = client.get_backer_leaderboard(&organizer, &10);
+    assert_eq!(all.len(), 3);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_backer_leaderboard_rejects_non_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    let stranger = Address::generate(&env);
+    client.get_backer_leaderboard(&stranger, &5);
+}
+
+#[test]
+fn test_snapshot_returns_stats_and_emits_event() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &6_000);
+    client.contribute(&contributor, &6_000);
+
+    let stats = client.snapshot_campaign_stats(&organizer);
+    assert_eq!(stats.raised, 6_000);
+    assert_eq!(stats.percent_funded_bps, 6_000);
+    // The snapshot publishes a detailed event for off-chain indexing.
+    assert!(!env.events().all().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_snapshot_rejects_non_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let stranger = Address::generate(&env);
+    let _ = contributor;
+    client.snapshot_campaign_stats(&stranger);
 }
