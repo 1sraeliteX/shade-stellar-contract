@@ -13,6 +13,7 @@ pub mod test_draft_invoice;
 pub mod test_expired_escrow_refund;
 pub mod test_fee_discounts;
 pub mod test_fees;
+pub mod test_feature_219;
 pub mod test_invoice;
 pub mod test_invoice_amendment;
 pub mod test_invoice_expiry;
