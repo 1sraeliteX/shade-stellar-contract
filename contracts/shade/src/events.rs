@@ -1004,3 +1004,262 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Campaign categories & tagging (#352) ──────────────────────────────────────
+
+#[contractevent]
+pub struct CampaignCategoryCreatedEvent {
+    pub category_id: u64,
+    pub admin: Address,
+    pub name: String,
+    pub description: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_category_created_event(
+    env: &Env,
+    category_id: u64,
+    admin: Address,
+    name: String,
+    description: String,
+    timestamp: u64,
+) {
+    CampaignCategoryCreatedEvent {
+        category_id,
+        admin,
+        name,
+        description,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignCategoryUpdatedEvent {
+    pub category_id: u64,
+    pub admin: Address,
+    pub name: String,
+    pub description: String,
+    pub active: bool,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_category_updated_event(
+    env: &Env,
+    category_id: u64,
+    admin: Address,
+    name: String,
+    description: String,
+    active: bool,
+    timestamp: u64,
+) {
+    CampaignCategoryUpdatedEvent {
+        category_id,
+        admin,
+        name,
+        description,
+        active,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignTagCreatedEvent {
+    pub tag_id: u64,
+    pub creator: Address,
+    pub name: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_tag_created_event(
+    env: &Env,
+    tag_id: u64,
+    creator: Address,
+    name: String,
+    timestamp: u64,
+) {
+    CampaignTagCreatedEvent {
+        tag_id,
+        creator,
+        name,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[allow(clippy::too_many_arguments)]
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub title: String,
+    pub description: String,
+    pub category_id: u64,
+    pub tags: Vec<u64>,
+    pub goal_amount: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    title: String,
+    description: String,
+    category_id: u64,
+    tags: Vec<u64>,
+    goal_amount: i128,
+    token: Address,
+    deadline: u64,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        title,
+        description,
+        category_id,
+        tags,
+        goal_amount,
+        token,
+        deadline,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignUpdatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub title: String,
+    pub description: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_updated_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    title: String,
+    description: String,
+    timestamp: u64,
+) {
+    CampaignUpdatedEvent {
+        campaign_id,
+        merchant,
+        title,
+        description,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignStatusChangedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub active: bool,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_status_changed_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    active: bool,
+    timestamp: u64,
+) {
+    CampaignStatusChangedEvent {
+        campaign_id,
+        merchant,
+        active,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignTagAddedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub tag_id: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_tag_added_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    tag_id: u64,
+    timestamp: u64,
+) {
+    CampaignTagAddedEvent {
+        campaign_id,
+        merchant,
+        tag_id,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignTagRemovedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub tag_id: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_tag_removed_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    tag_id: u64,
+    timestamp: u64,
+) {
+    CampaignTagRemovedEvent {
+        campaign_id,
+        merchant,
+        tag_id,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignContributionEvent {
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub raised_amount: i128,
+    pub goal_amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_contribution_event(
+    env: &Env,
+    campaign_id: u64,
+    contributor: Address,
+    amount: i128,
+    raised_amount: i128,
+    goal_amount: i128,
+    timestamp: u64,
+) {
+    CampaignContributionEvent {
+        campaign_id,
+        contributor,
+        amount,
+        raised_amount,
+        goal_amount,
+        timestamp,
+    }
+    .publish(env);
+}

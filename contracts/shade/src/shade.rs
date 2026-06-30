@@ -1,6 +1,7 @@
 use crate::components::{
-    access_control as access_control_component, admin as admin_component, core as core_component,
-    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
+    access_control as access_control_component, admin as admin_component,
+    campaigns as campaigns_component, core as core_component, invoice as invoice_component,
+    merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component,
 };
@@ -8,7 +9,8 @@ use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
+    Campaign, CampaignCategory, CampaignFilter, CampaignTag, ContractInfo,
+    CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
     PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
 };
@@ -571,5 +573,128 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    // ── Campaign categories & tagging (#352) ──────────────────────────────
+
+    fn create_campaign_category(
+        env: Env,
+        admin: Address,
+        name: String,
+        description: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::create_category(&env, &admin, &name, &description)
+    }
+
+    fn update_campaign_category(
+        env: Env,
+        admin: Address,
+        category_id: u64,
+        name: Option<String>,
+        description: Option<String>,
+        active: Option<bool>,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::update_category(
+            &env,
+            &admin,
+            category_id,
+            name,
+            description,
+            active,
+        );
+    }
+
+    fn get_campaign_category(env: Env, category_id: u64) -> CampaignCategory {
+        campaigns_component::get_category(&env, category_id)
+    }
+
+    fn get_campaign_categories(env: Env) -> Vec<CampaignCategory> {
+        campaigns_component::get_categories(&env)
+    }
+
+    fn create_campaign_tag(env: Env, creator: Address, name: String) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::create_tag(&env, &creator, &name)
+    }
+
+    fn get_campaign_tag(env: Env, tag_id: u64) -> CampaignTag {
+        campaigns_component::get_tag(&env, tag_id)
+    }
+
+    fn get_campaign_tags(env: Env) -> Vec<CampaignTag> {
+        campaigns_component::get_tags(&env)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        description: String,
+        category_id: u64,
+        tags: Vec<u64>,
+        goal_amount: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::create_campaign(
+            &env,
+            &merchant,
+            &title,
+            &description,
+            category_id,
+            &tags,
+            goal_amount,
+            &token,
+            deadline,
+        )
+    }
+
+    fn update_campaign(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: Option<String>,
+        description: Option<String>,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::update_campaign(&env, &merchant, campaign_id, title, description);
+    }
+
+    fn set_campaign_active(env: Env, merchant: Address, campaign_id: u64, active: bool) {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::set_campaign_active(&env, &merchant, campaign_id, active);
+    }
+
+    fn add_campaign_tag(env: Env, merchant: Address, campaign_id: u64, tag_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::add_campaign_tag(&env, &merchant, campaign_id, tag_id);
+    }
+
+    fn remove_campaign_tag(env: Env, merchant: Address, campaign_id: u64, tag_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaigns_component::remove_campaign_tag(&env, &merchant, campaign_id, tag_id);
+    }
+
+    fn record_campaign_contribution(
+        env: Env,
+        campaign_id: u64,
+        contributor: Address,
+        amount: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        contributor.require_auth();
+        campaigns_component::record_contribution(&env, campaign_id, &contributor, amount);
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        campaigns_component::get_campaign(&env, campaign_id)
+    }
+
+    fn get_campaigns(env: Env, filter: CampaignFilter) -> Vec<Campaign> {
+        campaigns_component::get_campaigns(&env, filter)
     }
 }

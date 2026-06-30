@@ -53,4 +53,27 @@ pub enum ContractError {
     NotTicketOwner = 52,
     TicketEventMismatch = 53,
     InvalidResalePrice = 54,
+    // ── Campaign categories & tagging (#352) ──────────────────────────────
+    /// Referenced campaign category does not exist.
+    CampaignCategoryNotFound = 55,
+    /// A category with the supplied name has already been registered.
+    CampaignCategoryAlreadyExists = 56,
+    /// Referenced campaign category exists but is not active.
+    CampaignCategoryInactive = 57,
+    /// Referenced campaign tag does not exist.
+    CampaignTagNotFound = 58,
+    /// A tag with the supplied name has already been registered.
+    CampaignTagAlreadyExists = 59,
+    /// Referenced campaign does not exist.
+    CampaignNotFound = 60,
+    /// Campaign goal_amount must be positive.
+    InvalidCampaignGoal = 61,
+    /// Campaign deadline must be in the future.
+    InvalidCampaignDeadline = 62,
+    /// Operation referred to a campaign that has been deactivated.
+    CampaignInactive = 63,
+    /// The caller is not the merchant that owns the campaign.
+    NotCampaignMerchant = 64,
+    /// The campaign's deadline has passed and it can no longer accept contributions.
+    CampaignExpired = 65,
 }

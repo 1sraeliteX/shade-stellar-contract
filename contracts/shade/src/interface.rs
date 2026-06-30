@@ -1,7 +1,8 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    Campaign, CampaignCategory, CampaignFilter, CampaignTag, CrossChainBridgePayload, Event,
+    Invoice, InvoiceFilter, Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +235,91 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Campaign categories & tagging (#352) ──────────────────────────────
+
+    /// Create a new campaign category. Admin-only. Returns the new category ID.
+    fn create_campaign_category(
+        env: Env,
+        admin: Address,
+        name: String,
+        description: String,
+    ) -> u64;
+
+    /// Update an existing campaign category. Admin-only.
+    /// All fields are optional; only `Some` values are written.
+    fn update_campaign_category(
+        env: Env,
+        admin: Address,
+        category_id: u64,
+        name: Option<String>,
+        description: Option<String>,
+        active: Option<bool>,
+    );
+
+    /// Fetch a campaign category by ID.
+    fn get_campaign_category(env: Env, category_id: u64) -> CampaignCategory;
+
+    /// List every campaign category ever created.
+    fn get_campaign_categories(env: Env) -> Vec<CampaignCategory>;
+
+    /// Create a new campaign tag. Callable by the admin or any registered
+    /// merchant. Returns the new tag ID.
+    fn create_campaign_tag(env: Env, creator: Address, name: String) -> u64;
+
+    /// Fetch a campaign tag by ID.
+    fn get_campaign_tag(env: Env, tag_id: u64) -> CampaignTag;
+
+    /// List every campaign tag ever created.
+    fn get_campaign_tags(env: Env) -> Vec<CampaignTag>;
+
+    /// Create a new campaign. Merchant-only. The category must exist and be
+    /// active; every tag ID must reference an existing tag. Returns the new
+    /// campaign ID.
+    #[allow(clippy::too_many_arguments)]
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        description: String,
+        category_id: u64,
+        tags: Vec<u64>,
+        goal_amount: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64;
+
+    /// Update the title and/or description of an existing campaign. Owner-only.
+    /// Goal/token/deadline are immutable to preserve the published target.
+    fn update_campaign(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: Option<String>,
+        description: Option<String>,
+    );
+
+    /// Toggle a campaign's active flag. Owner-only.
+    fn set_campaign_active(env: Env, merchant: Address, campaign_id: u64, active: bool);
+
+    /// Attach a tag to a campaign. Owner-only. De-duplicated.
+    fn add_campaign_tag(env: Env, merchant: Address, campaign_id: u64, tag_id: u64);
+
+    /// Detach a tag from a campaign. Owner-only.
+    fn remove_campaign_tag(env: Env, merchant: Address, campaign_id: u64, tag_id: u64);
+
+    /// Record a contribution against a campaign. Open to any caller
+    /// (backers, payment gateways, etc.).
+    fn record_campaign_contribution(
+        env: Env,
+        campaign_id: u64,
+        contributor: Address,
+        amount: i128,
+    );
+
+    /// Fetch a campaign by ID.
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign;
+
+    /// Filtered campaign listing. Any of the filter fields may be `None`.
+    fn get_campaigns(env: Env, filter: CampaignFilter) -> Vec<Campaign>;
 }
