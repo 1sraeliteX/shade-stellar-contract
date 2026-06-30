@@ -73,7 +73,6 @@ fn test_register_affiliate_emits_event() {
     let affiliate = Address::generate(&env);
 
     client.register_affiliate(&organizer, &affiliate);
-    assert!(client.is_affiliate(&affiliate));
 
     let events = env.events().all();
     let (event_contract_id, _topics, data) = events.get(events.len() - 1).unwrap();
@@ -85,6 +84,8 @@ fn test_register_affiliate_emits_event() {
         .try_into_val(&env)
         .unwrap();
     assert_eq!(affiliate_in_event, affiliate);
+
+    assert!(client.is_affiliate(&affiliate));
 }
 
 #[test]
@@ -138,10 +139,6 @@ fn test_contribute_with_affiliate_accrues_exact_commission_and_emits_event() {
     StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
     client.contribute_with_affiliate(&contributor, &1_000, &affiliate);
 
-    assert_eq!(client.affiliate_balance(&affiliate), 50);
-    assert_eq!(client.pledge_of(&contributor), 1_000);
-    assert_eq!(client.raised(), 1_000);
-
     let events = env.events().all();
     let (event_contract_id, _topics, data) = events.get(events.len() - 1).unwrap();
     assert_eq!(event_contract_id, contract);
@@ -164,6 +161,10 @@ fn test_contribute_with_affiliate_accrues_exact_commission_and_emits_event() {
     assert_eq!(affiliate_in_event, affiliate);
     assert_eq!(contributor_in_event, contributor);
     assert_eq!(commission_in_event, 50);
+
+    assert_eq!(client.affiliate_balance(&affiliate), 50);
+    assert_eq!(client.pledge_of(&contributor), 1_000);
+    assert_eq!(client.raised(), 1_000);
 }
 
 #[test]
