@@ -2,6 +2,7 @@
 
 use crate::shade::{Shade, ShadeClient};
 use crate::types::{MerchantAnalytics, MerchantAnalyticsSummary, TokenAnalytics};
+use account::account::{MerchantAccount, MerchantAccountClient};
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{Address, Env, String};
 
@@ -10,6 +11,9 @@ const WEEK_IN_SECONDS: u64 = 604800;
 
 fn setup(env: &Env) -> (Address, ShadeClient<'_>, Address, Address, Address, Address) {
     env.mock_all_auths();
+    // Start from a non-zero ledger time so analytics `last_updated` timestamps
+    // are positive.
+    env.ledger().set_timestamp(1_700_000_000);
     let contract_id = env.register(Shade, ());
     let client = ShadeClient::new(env, &contract_id);
 
@@ -34,7 +38,11 @@ fn setup(env: &Env) -> (Address, ShadeClient<'_>, Address, Address, Address, Add
     client.register_merchant(&merchant);
     client.verify_merchant(&admin, &1, &true);
 
-    let merchant_account = Address::generate(env);
+    // Deploy a real merchant-account contract so flows that move funds back out
+    // (e.g. refunds) can call into it.
+    let merchant_account = env.register(MerchantAccount, ());
+    let merchant_account_client = MerchantAccountClient::new(env, &merchant_account);
+    merchant_account_client.initialize(&merchant, &contract_id, &1_u64);
     client.set_merchant_account(&merchant, &merchant_account);
 
     (admin, client, token1, token2, merchant, merchant_account)
@@ -367,14 +375,14 @@ fn test_analytics_consistency_across_payment_types() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Create multiple invoices with different amounts
-    let amounts = vec![500, 1000, 1500, 2000, 2500];
+    let amounts = [500i128, 1000, 1500, 2000, 2500];
     let mut expected_volume = 0i128;
     let mut expected_fees = 0i128;
 
     for (i, amount) in amounts.iter().enumerate() {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("invoice_{}", i)),
+            &String::from_str(&env, "invoice"),
             amount,
             &token1,
             &None,
@@ -498,7 +506,7 @@ fn test_analytics_timestamp_accuracy() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Set specific timestamps for testing
-    let timestamps = vec![1000000u64, 1001000u64, 1002000u64];
+    let timestamps = [1000000u64, 1001000u64, 1002000u64];
     
     for (i, &timestamp) in timestamps.iter().enumerate() {
         env.ledger().with_mut(|li| {
@@ -507,7 +515,7 @@ fn test_analytics_timestamp_accuracy() {
 
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("timestamp_test_{}", i)),
+            &String::from_str(&env, "timestamp_test"),
             &1000,
             &token1,
             &None,
@@ -527,41 +535,22 @@ fn test_analytics_timestamp_accuracy() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #7)")] // InvalidAmount
 fn test_zero_amount_payments_analytics() {
     let env = Env::default();
     let (_admin, client, token1, _token2, merchant, _merchant_account) = setup(&env);
     let payer = Address::generate(&env);
     fund_payer(&env, &token1, &payer, 1_000_000);
 
-    // Test with zero amount (edge case)
-    let inv_zero = client.create_invoice(
+    // Zero-amount invoices are rejected at creation (InvalidAmount), so they can
+    // never reach analytics. Verify the contract refuses the zero-amount edge case.
+    client.create_invoice(
         &merchant,
         &String::from_str(&env, "zero_amount_invoice"),
         &0,
         &token1,
         &None,
     );
-    client.pay_invoice(&payer, &inv_zero);
-
-    let analytics_zero = client.get_merchant_analytics(&merchant, &token1);
-    assert_eq!(analytics_zero.total_volume, 0);
-    assert_eq!(analytics_zero.total_fees, 0);
-    assert_eq!(analytics_zero.transaction_count, 1); // Transaction still counted
-
-    // Follow up with normal payment
-    let inv_normal = client.create_invoice(
-        &merchant,
-        &String::from_str(&env, "normal_amount_invoice"),
-        &1000,
-        &token1,
-        &None,
-    );
-    client.pay_invoice(&payer, &inv_normal);
-
-    let analytics_normal = client.get_merchant_analytics(&merchant, &token1);
-    assert_eq!(analytics_normal.total_volume, 1000);
-    assert_eq!(analytics_normal.total_fees, 100);
-    assert_eq!(analytics_normal.transaction_count, 2);
 }
 
 #[test]
@@ -570,6 +559,14 @@ fn test_analytics_with_subscription_payments() {
     let (_admin, client, token1, _token2, merchant, merchant_account) = setup(&env);
     let customer = Address::generate(&env);
     fund_payer(&env, &token1, &customer, 1_000_000);
+    // Subscription charges pull funds via `transfer_from`, so the customer must
+    // approve the shade contract to spend their tokens.
+    soroban_sdk::token::TokenClient::new(&env, &token1).approve(
+        &customer,
+        &client.address,
+        &1_000_000,
+        &1_000_000,
+    );
 
     // Create a subscription plan
     let plan_id = client.create_subscription_plan(
@@ -625,7 +622,7 @@ fn test_analytics_aggregation_performance() {
     for i in 0..num_transactions {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("perf_test_{}", i)),
+            &String::from_str(&env, "perf_test"),
             &amount_per_transaction,
             &token1,
             &None,
@@ -714,14 +711,14 @@ fn test_analytics_merchant_volume_discount_integration() {
     fund_payer(&env, &token1, &payer, 1_000_000);
 
     // Track volume and fee changes as discounts kick in
-    let payment_amounts = vec![5000, 6000, 40000, 10000]; // Will trigger different discount tiers
+    let payment_amounts = [5000i128, 6000, 40000, 10000]; // Will trigger different discount tiers
     let mut expected_volume = 0i128;
     let mut expected_fees = 0i128;
 
     for (i, &amount) in payment_amounts.iter().enumerate() {
         let inv = client.create_invoice(
             &merchant,
-            &String::from_str(&env, &format!("discount_test_{}", i)),
+            &String::from_str(&env, "discount_test"),
             &amount,
             &token1,
             &None,
@@ -827,7 +824,7 @@ fn test_analytics_data_consistency_after_refunds() {
     assert_eq!(analytics_after_payment.transaction_count, 1);
 
     // Refund the invoice
-    client.refund_invoice(&merchant, &inv, &1000); // Partial refund
+    client.refund_invoice_partial(&merchant, &inv, &1000); // Partial refund
 
     // Analytics should remain unchanged after refund (refunds don't reduce analytics)
     let analytics_after_refund = client.get_merchant_analytics(&merchant, &token1);

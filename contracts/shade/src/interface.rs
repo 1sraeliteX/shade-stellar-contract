@@ -96,6 +96,11 @@ pub trait ShadeTrait {
     fn get_merchant_analytics_summary(env: Env, merchant: Address) -> MerchantAnalyticsSummary;
     fn set_merchant_account(env: Env, merchant: Address, account: Address);
     fn get_merchant_account(env: Env, merchant_id: u64) -> Address;
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128);
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128>;
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address);
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address>;
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
     fn pay_invoices_batch(env: Env, payer: Address, invoice_ids: Vec<u64>);
     fn pay_invoice_partial(env: Env, payer: Address, invoice_id: u64, amount: i128);

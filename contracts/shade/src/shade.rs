@@ -1,7 +1,8 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component,
-    bridge as bridge_component, core as core_component, governance as governance_component,
-    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
+    auto_withdrawal as auto_withdrawal_component, bridge as bridge_component,
+    core as core_component, governance as governance_component, invoice as invoice_component,
+    merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component,
 };
@@ -312,6 +313,29 @@ impl ShadeTrait for Shade {
 
     fn get_merchant_account(env: Env, merchant_id: u64) -> Address {
         merchant_component::get_merchant_account(&env, merchant_id)
+    }
+
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_threshold(&env, &merchant, &token, threshold);
+    }
+
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        auto_withdrawal_component::get_auto_withdrawal_threshold(&env, merchant_id, &token)
+    }
+
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_recipient(&env, &merchant, &recipient);
+    }
+
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address> {
+        auto_withdrawal_component::get_auto_withdrawal_recipient(&env, merchant_id)
+    }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
     }
 
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64) {

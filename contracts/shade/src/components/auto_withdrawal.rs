@@ -1,8 +1,8 @@
 use crate::components::merchant;
 use crate::errors::ContractError;
 use crate::events;
-use crate::types::{AutoWithdrawalThreshold, DataKey};
-use soroban_sdk::{panic_with_error, token, Address, Env};
+use crate::types::{AutoWithdrawalThreshold, DataKey, Merchant};
+use soroban_sdk::{panic_with_error, token, Address, Env, Vec};
 
 /// Set auto-withdrawal threshold for a merchant and token
 pub fn set_auto_withdrawal_threshold(
@@ -18,22 +18,35 @@ pub fn set_auto_withdrawal_threshold(
     }
 
     let merchant_id = merchant::get_merchant_id(env, merchant_address);
-    let merchant = merchant::get_merchant(env, merchant_id);
+    let mut merchant = merchant::get_merchant(env, merchant_id);
 
     if !merchant.active {
         panic_with_error!(env, ContractError::MerchantNotActive);
     }
 
-    let threshold_data = AutoWithdrawalThreshold {
-        merchant_id,
-        token: token.clone(),
-        threshold,
-    };
+    // Replace any existing threshold for this token, otherwise append.
+    let mut updated: Vec<AutoWithdrawalThreshold> = Vec::new(env);
+    let mut found = false;
+    for entry in merchant.auto_withdrawal_thresholds.iter() {
+        if entry.token == *token {
+            updated.push_back(AutoWithdrawalThreshold {
+                token: token.clone(),
+                threshold,
+            });
+            found = true;
+        } else {
+            updated.push_back(entry);
+        }
+    }
+    if !found {
+        updated.push_back(AutoWithdrawalThreshold {
+            token: token.clone(),
+            threshold,
+        });
+    }
+    merchant.auto_withdrawal_thresholds = updated;
 
-    env.storage().persistent().set(
-        &DataKey::MerchantAutoWithdrawalThreshold(merchant_id, token.clone()),
-        &threshold_data,
-    );
+    save_merchant(env, merchant_id, &merchant);
 
     events::publish_auto_withdrawal_threshold_set_event(env, merchant_id, token.clone(), threshold);
 }
@@ -44,10 +57,13 @@ pub fn get_auto_withdrawal_threshold(
     merchant_id: u64,
     token: &Address,
 ) -> Option<i128> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::MerchantAutoWithdrawalThreshold(merchant_id, token.clone()))
-        .map(|threshold_data: AutoWithdrawalThreshold| threshold_data.threshold)
+    let merchant = merchant::get_merchant(env, merchant_id);
+    for entry in merchant.auto_withdrawal_thresholds.iter() {
+        if entry.token == *token {
+            return Some(entry.threshold);
+        }
+    }
+    None
 }
 
 /// Set auto-withdrawal recipient address for a merchant
@@ -59,24 +75,27 @@ pub fn set_auto_withdrawal_recipient(
     merchant_address.require_auth();
 
     let merchant_id = merchant::get_merchant_id(env, merchant_address);
-    let merchant = merchant::get_merchant(env, merchant_id);
+    let mut merchant = merchant::get_merchant(env, merchant_id);
 
     if !merchant.active {
         panic_with_error!(env, ContractError::MerchantNotActive);
     }
 
-    env.storage()
-        .persistent()
-        .set(&DataKey::MerchantAutoWithdrawalRecipient(merchant_id), recipient);
+    merchant.auto_withdrawal_recipient = Some(recipient.clone());
+    save_merchant(env, merchant_id, &merchant);
 
     events::publish_auto_withdrawal_recipient_set_event(env, merchant_id, recipient.clone());
 }
 
 /// Get auto-withdrawal recipient for a merchant
 pub fn get_auto_withdrawal_recipient(env: &Env, merchant_id: u64) -> Option<Address> {
+    merchant::get_merchant(env, merchant_id).auto_withdrawal_recipient
+}
+
+fn save_merchant(env: &Env, merchant_id: u64, merchant: &Merchant) {
     env.storage()
         .persistent()
-        .get(&DataKey::MerchantAutoWithdrawalRecipient(merchant_id))
+        .set(&DataKey::Merchant(merchant_id), merchant);
 }
 
 /// Check and trigger auto-withdrawal if balance exceeds threshold

@@ -218,8 +218,8 @@ fn test_factory_and_ticketing_contract_lifecycle() {
     let qr_hash = soroban_sdk::BytesN::from_array(&env, &qr_bytes);
     let ticket_id = ticketing_client.issue_ticket(&organizer, &event_id, &holder, &qr_hash);
 
-    let operator = Address::generate(&env);
-    ticketing_client.check_in(&operator, &ticket_id);
+    // Only the event organizer may check tickets in.
+    ticketing_client.check_in(&organizer, &ticket_id);
 
     let ticket = ticketing_client.get_ticket(&ticket_id);
     assert!(ticket.checked_in);

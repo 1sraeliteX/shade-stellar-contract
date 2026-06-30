@@ -1249,3 +1249,97 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Auto-withdrawal events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct WithdrawalThresholdSetEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
+
+pub fn publish_auto_withdrawal_threshold_set_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    threshold: i128,
+) {
+    WithdrawalThresholdSetEvent {
+        merchant_id,
+        token,
+        threshold,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct WithdrawalRecipientSetEvent {
+    pub merchant_id: u64,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_recipient_set_event(
+    env: &Env,
+    merchant_id: u64,
+    recipient: Address,
+) {
+    WithdrawalRecipientSetEvent {
+        merchant_id,
+        recipient,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawalTriggeredEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_triggered_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+) {
+    AutoWithdrawalTriggeredEvent {
+        merchant_id,
+        token,
+        amount,
+        recipient,
+    }
+    .publish(env);
+}
+
+// ── Escrow expired-refund event ────────────────────────────────────────────────
+
+#[contractevent]
+pub struct EscrowExpiredRefundEvent {
+    pub invoice_id: u64,
+    pub buyer: Address,
+    pub amount: i128,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_expired_refund_event(
+    env: &Env,
+    invoice_id: u64,
+    buyer: Address,
+    amount: i128,
+    token: Address,
+    timestamp: u64,
+) {
+    EscrowExpiredRefundEvent {
+        invoice_id,
+        buyer,
+        amount,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}

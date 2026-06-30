@@ -96,7 +96,7 @@ fn test_fiat_invoice_creation_and_resolution() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #18)")]
+#[should_panic(expected = "HostError: Error(Contract, #34)")] // OracleNotConfigured
 fn test_fiat_invoice_fails_without_oracle() {
     let (env, client, _shade_id, admin) = setup_test();
     let token = create_test_token(&env);
@@ -117,7 +117,7 @@ fn test_fiat_invoice_fails_without_oracle() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #18)")]
+#[should_panic(expected = "HostError: Error(Contract, #35)")] // OraclePriceUnavailable
 fn test_fiat_invoice_fails_with_invalid_price() {
     let (env, client, _shade_id, admin) = setup_test();
     let token = create_test_token(&env);

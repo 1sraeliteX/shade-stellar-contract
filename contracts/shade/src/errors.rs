@@ -81,3 +81,17 @@ pub enum GovernanceError {
     /// This member has already voted on the proposal.
     AlreadyVoted = 107,
 }
+
+/// Escrow / expired-refund errors. Kept in a separate enum so `ContractError`
+/// can stay within Soroban's hard cap of 50 cases. The numeric codes (44/45)
+/// are scoped to this enum and are only ever returned from the escrow-refund
+/// path, so there is no on-chain ambiguity with `ContractError`'s own 44/45.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowError {
+    /// The escrow invoice has not yet reached its expiration timestamp.
+    EscrowNotExpired = 44,
+    /// The escrow invoice has already been fully refunded.
+    EscrowAlreadyRefunded = 45,
+}

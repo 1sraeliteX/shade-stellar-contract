@@ -73,6 +73,15 @@ pub enum DataKey {
     GovVote(u64, Address),
 }
 
+/// A single per-token auto-withdrawal threshold. Stored inside [`Merchant`] so
+/// no extra `DataKey` variants are consumed (the enum is at its 50-case cap).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub token: Address,
+    pub threshold: i128,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractInfo {
@@ -90,6 +99,11 @@ pub struct Merchant {
     pub date_registered: u64,
     pub account: Address,
     pub webhook: String,
+    /// Optional recipient for auto-withdrawals. Defaults to the merchant
+    /// address when unset.
+    pub auto_withdrawal_recipient: Option<Address>,
+    /// Per-token auto-withdrawal thresholds.
+    pub auto_withdrawal_thresholds: Vec<AutoWithdrawalThreshold>,
 }
 
 #[contracttype]
