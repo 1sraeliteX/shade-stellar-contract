@@ -11,6 +11,7 @@ pub mod multisig_withdrawal;
 pub mod pausable;
 pub mod payment;
 pub mod reentrancy;
+pub mod search;
 pub mod signature_util;
 pub mod subscription;
 pub mod upgrade;

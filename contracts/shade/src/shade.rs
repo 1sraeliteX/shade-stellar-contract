@@ -2,17 +2,18 @@ use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component,
     multisig_withdrawal as multisig_component, pausable as pausable_component,
-    subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    search as search_component, subscription as subscription_component,
+    upgrade as upgrade_component, history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
-    WithdrawalProposal,
+    ContractInfo, CrossChainBridgePayload, DataKey, Event, EventFilter, Invoice, InvoiceFilter,
+    InvoicePage, Merchant, MerchantFilter, MerchantPage, MerchantAnalytics,
+    MerchantAnalyticsSummary, OracleConfig, PaymentPayload, PendingFee, Role, Subscription,
+    SubscriptionFilter, SubscriptionPlan, SubscriptionPlanFilter, Ticket, TokenAnalytics,
+    Transaction, WithdrawalProposal, WithdrawalProposalFilter,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -624,5 +625,54 @@ impl ShadeTrait for Shade {
 
     fn get_withdrawal_proposal_count(env: Env) -> u64 {
         multisig_component::get_proposal_count(&env)
+    }
+
+    // ── On-chain search and filtering utilities (#353) ───────────────────────
+
+    fn search_invoices_paginated(
+        env: Env,
+        caller: Address,
+        filter: InvoiceFilter,
+        cursor: u64,
+        page_size: u32,
+    ) -> InvoicePage {
+        search_component::search_invoices_paginated(&env, &caller, filter, cursor, page_size)
+    }
+
+    fn search_merchants_paginated(
+        env: Env,
+        filter: MerchantFilter,
+        cursor: u64,
+        page_size: u32,
+    ) -> MerchantPage {
+        search_component::search_merchants_paginated(&env, filter, cursor, page_size)
+    }
+
+    fn search_subscription_plans(
+        env: Env,
+        caller: Address,
+        filter: SubscriptionPlanFilter,
+    ) -> Vec<SubscriptionPlan> {
+        search_component::search_subscription_plans(&env, &caller, filter)
+    }
+
+    fn search_subscriptions(env: Env, filter: SubscriptionFilter) -> Vec<Subscription> {
+        search_component::search_subscriptions(&env, filter)
+    }
+
+    fn search_events(env: Env, caller: Address, filter: EventFilter) -> Vec<Event> {
+        search_component::search_events(&env, &caller, filter)
+    }
+
+    fn search_withdrawal_proposals(
+        env: Env,
+        caller: Address,
+        filter: WithdrawalProposalFilter,
+    ) -> Vec<WithdrawalProposal> {
+        search_component::search_withdrawal_proposals(&env, &caller, filter)
+    }
+
+    fn find_merchant_id(env: Env, address: Address) -> u64 {
+        search_component::find_merchant_id(&env, &address).unwrap_or(0)
     }
 }

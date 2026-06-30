@@ -1,0 +1,490 @@
+//! On-chain search and filtering utilities component (#353).
+//!
+//! Provides rich, composable filter queries over every major entity in the
+//! Shade contract (invoices, merchants, subscription plans, subscriptions,
+//! events, withdrawal proposals) as well as cursor-based pagination for the
+//! two highest-volume collections (invoices and merchants).
+//!
+//! All read functions are side-effect-free except for emitting an
+//! informational search event so off-chain indexers can track query patterns.
+
+use crate::events;
+use crate::types::{
+    DataKey, Event, EventFilter, Invoice, InvoicePage, InvoiceFilter, Merchant, MerchantPage,
+    MerchantFilter, PageInfo, Subscription, SubscriptionFilter, SubscriptionPlan,
+    SubscriptionPlanFilter, WithdrawalProposal, WithdrawalProposalFilter,
+};
+use soroban_sdk::{Address, Env, Vec};
+
+// ── Paginated invoice search ──────────────────────────────────────────────────
+
+/// Return a page of invoices matching `filter`, starting after `cursor` (exclusive).
+///
+/// Pass `cursor = 0` for the first page.  Each page contains at most `page_size`
+/// items.  The returned `PageInfo.next_cursor` is the ID of the last item
+/// returned; use it as `cursor` in the next call.  A `next_cursor` of `0` in
+/// the response means there are no more pages.
+pub fn search_invoices_paginated(
+    env: &Env,
+    caller: &Address,
+    filter: InvoiceFilter,
+    cursor: u64,
+    page_size: u32,
+) -> InvoicePage {
+    let invoice_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::InvoiceCount)
+        .unwrap_or(0);
+
+    let start = if cursor == 0 { 1u64 } else { cursor + 1 };
+    let mut items: Vec<Invoice> = Vec::new(env);
+    let mut last_id: u64 = 0;
+    let limit = page_size as usize;
+
+    for i in start..=invoice_count {
+        if items.len() as usize >= limit {
+            break;
+        }
+        if let Some(invoice) = env
+            .storage()
+            .persistent()
+            .get::<_, Invoice>(&DataKey::Invoice(i))
+        {
+            if invoice_matches(&invoice, &filter, env) {
+                last_id = invoice.id;
+                items.push_back(invoice);
+            }
+        }
+    }
+
+    // Determine whether more pages follow by checking if any matching invoice
+    // exists beyond the last returned one.
+    let has_next = if last_id == 0 || last_id >= invoice_count {
+        false
+    } else {
+        let mut found_next = false;
+        for j in (last_id + 1)..=invoice_count {
+            if let Some(inv) = env
+                .storage()
+                .persistent()
+                .get::<_, Invoice>(&DataKey::Invoice(j))
+            {
+                if invoice_matches(&inv, &filter, env) {
+                    found_next = true;
+                    break;
+                }
+            }
+        }
+        found_next
+    };
+
+    let count = items.len();
+    let page_info = PageInfo {
+        count,
+        next_cursor: if has_next { last_id } else { 0 },
+        has_next_page: has_next,
+    };
+
+    events::publish_invoice_search_executed_event(
+        env,
+        caller.clone(),
+        count,
+        has_next,
+        env.ledger().timestamp(),
+    );
+
+    InvoicePage { items, page_info }
+}
+
+/// Internal: test whether an invoice matches all active filter predicates.
+fn invoice_matches(invoice: &Invoice, filter: &InvoiceFilter, env: &Env) -> bool {
+    if let Some(status) = filter.status {
+        if invoice.status as u32 != status {
+            return false;
+        }
+    }
+    if let Some(merchant_addr) = &filter.merchant {
+        match env
+            .storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::MerchantId(merchant_addr.clone()))
+        {
+            Some(mid) if mid == invoice.merchant_id => {}
+            _ => return false,
+        }
+    }
+    if let Some(min) = filter.min_amount {
+        if invoice.amount < min as i128 {
+            return false;
+        }
+    }
+    if let Some(max) = filter.max_amount {
+        if invoice.amount > max as i128 {
+            return false;
+        }
+    }
+    if let Some(start) = filter.start_date {
+        if invoice.date_created < start {
+            return false;
+        }
+    }
+    if let Some(end) = filter.end_date {
+        if invoice.date_created > end {
+            return false;
+        }
+    }
+    true
+}
+
+// ── Paginated merchant search ─────────────────────────────────────────────────
+
+/// Return a page of merchants matching `filter`, starting after `cursor`.
+pub fn search_merchants_paginated(
+    env: &Env,
+    filter: MerchantFilter,
+    cursor: u64,
+    page_size: u32,
+) -> MerchantPage {
+    let merchant_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::MerchantCount)
+        .unwrap_or(0);
+
+    let start = if cursor == 0 { 1u64 } else { cursor + 1 };
+    let mut items: Vec<Merchant> = Vec::new(env);
+    let mut last_id: u64 = 0;
+    let limit = page_size as usize;
+
+    for i in start..=merchant_count {
+        if items.len() as usize >= limit {
+            break;
+        }
+        if let Some(m) = env
+            .storage()
+            .persistent()
+            .get::<_, Merchant>(&DataKey::Merchant(i))
+        {
+            if merchant_matches(&m, &filter) {
+                last_id = m.id;
+                items.push_back(m);
+            }
+        }
+    }
+
+    let has_next = if last_id == 0 || last_id >= merchant_count {
+        false
+    } else {
+        let mut found = false;
+        for j in (last_id + 1)..=merchant_count {
+            if let Some(m) = env
+                .storage()
+                .persistent()
+                .get::<_, Merchant>(&DataKey::Merchant(j))
+            {
+                if merchant_matches(&m, &filter) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        found
+    };
+
+    let count = items.len();
+    MerchantPage {
+        items,
+        page_info: PageInfo {
+            count,
+            next_cursor: if has_next { last_id } else { 0 },
+            has_next_page: has_next,
+        },
+    }
+}
+
+fn merchant_matches(m: &Merchant, filter: &MerchantFilter) -> bool {
+    if let Some(active) = filter.is_active {
+        if m.active != active {
+            return false;
+        }
+    }
+    if let Some(verified) = filter.is_verified {
+        if m.verified != verified {
+            return false;
+        }
+    }
+    true
+}
+
+// ── Subscription plan search ──────────────────────────────────────────────────
+
+/// Return all subscription plans matching `filter`.
+pub fn search_subscription_plans(
+    env: &Env,
+    caller: &Address,
+    filter: SubscriptionPlanFilter,
+) -> Vec<SubscriptionPlan> {
+    let plan_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::PlanCount)
+        .unwrap_or(0);
+
+    let mut results: Vec<SubscriptionPlan> = Vec::new(env);
+
+    let merchant_id_opt: Option<u64> = filter.merchant.as_ref().and_then(|addr| {
+        env.storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::MerchantId(addr.clone()))
+    });
+
+    for i in 1..=plan_count {
+        if let Some(plan) = env
+            .storage()
+            .persistent()
+            .get::<_, SubscriptionPlan>(&DataKey::SubscriptionPlan(i))
+        {
+            let mut ok = true;
+            if let Some(mid) = merchant_id_opt {
+                if plan.merchant_id != mid {
+                    ok = false;
+                }
+            }
+            if ok {
+                if let Some(active) = filter.active {
+                    if plan.active != active {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(ref tok) = filter.token {
+                    if plan.token != *tok {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                results.push_back(plan);
+            }
+        }
+    }
+
+    let count = results.len();
+    events::publish_subscription_plan_search_event(
+        env,
+        caller.clone(),
+        count,
+        env.ledger().timestamp(),
+    );
+
+    results
+}
+
+// ── Subscription search ───────────────────────────────────────────────────────
+
+/// Return all subscriptions matching `filter`.
+pub fn search_subscriptions(
+    env: &Env,
+    filter: SubscriptionFilter,
+) -> Vec<Subscription> {
+    let sub_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::SubscriptionCount)
+        .unwrap_or(0);
+
+    let mut results: Vec<Subscription> = Vec::new(env);
+
+    for i in 1..=sub_count {
+        if let Some(sub) = env
+            .storage()
+            .persistent()
+            .get::<_, Subscription>(&DataKey::Subscription(i))
+        {
+            let mut ok = true;
+            if let Some(plan_id) = filter.plan_id {
+                if sub.plan_id != plan_id {
+                    ok = false;
+                }
+            }
+            if ok {
+                if let Some(ref customer) = filter.customer {
+                    if sub.customer != *customer {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(status_u32) = filter.status {
+                    let sub_status_u32 = sub.status as u32;
+                    if sub_status_u32 != status_u32 {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                results.push_back(sub);
+            }
+        }
+    }
+
+    results
+}
+
+// ── Event (ticketing) search ──────────────────────────────────────────────────
+
+/// Return all on-chain events matching `filter`.
+pub fn search_events(
+    env: &Env,
+    caller: &Address,
+    filter: EventFilter,
+) -> Vec<Event> {
+    let event_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventCount)
+        .unwrap_or(0);
+
+    let mut results: Vec<Event> = Vec::new(env);
+
+    let merchant_id_opt: Option<u64> = filter.merchant.as_ref().and_then(|addr| {
+        env.storage()
+            .persistent()
+            .get::<_, u64>(&DataKey::MerchantId(addr.clone()))
+    });
+
+    for i in 1..=event_count {
+        if let Some(evt) = env
+            .storage()
+            .persistent()
+            .get::<_, Event>(&DataKey::Event(i))
+        {
+            let mut ok = true;
+            if let Some(mid) = merchant_id_opt {
+                if evt.merchant_id != mid {
+                    ok = false;
+                }
+            }
+            if ok {
+                if let Some(cancelled) = filter.cancelled {
+                    if evt.cancelled != cancelled {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(start) = filter.start_date {
+                    if evt.event_date < start {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(end) = filter.end_date {
+                    if evt.event_date > end {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(min_avail) = filter.min_available {
+                    let available = evt.capacity.saturating_sub(evt.sold);
+                    if available < min_avail {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                results.push_back(evt);
+            }
+        }
+    }
+
+    let count = results.len();
+    events::publish_event_search_executed_event(
+        env,
+        caller.clone(),
+        count,
+        env.ledger().timestamp(),
+    );
+
+    results
+}
+
+// ── Withdrawal proposal search ────────────────────────────────────────────────
+
+/// Return all withdrawal proposals matching `filter`.
+pub fn search_withdrawal_proposals(
+    env: &Env,
+    caller: &Address,
+    filter: WithdrawalProposalFilter,
+) -> Vec<WithdrawalProposal> {
+    let proposal_count: u64 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::WithdrawalProposalCount)
+        .unwrap_or(0);
+
+    let mut results: Vec<WithdrawalProposal> = Vec::new(env);
+
+    for i in 1..=proposal_count {
+        if let Some(p) = env
+            .storage()
+            .persistent()
+            .get::<_, WithdrawalProposal>(&DataKey::WithdrawalProposal(i))
+        {
+            let mut ok = true;
+            if let Some(ref merchant) = filter.merchant {
+                if p.merchant != *merchant {
+                    ok = false;
+                }
+            }
+            if ok {
+                if let Some(status_u32) = filter.status {
+                    let p_status_u32 = p.status as u32;
+                    if p_status_u32 != status_u32 {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(ref tok) = filter.token {
+                    if p.token != *tok {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                if let Some(after) = filter.created_after {
+                    if p.created_at < after {
+                        ok = false;
+                    }
+                }
+            }
+            if ok {
+                results.push_back(p);
+            }
+        }
+    }
+
+    let count = results.len();
+    events::publish_withdrawal_proposal_search_event(
+        env,
+        caller.clone(),
+        count,
+        env.ledger().timestamp(),
+    );
+
+    results
+}
+
+// ── Convenience: merchant ID lookup ──────────────────────────────────────────
+
+/// Look up a merchant ID from an address, returning `None` if not registered.
+pub fn find_merchant_id(env: &Env, address: &Address) -> Option<u64> {
+    env.storage()
+        .persistent()
+        .get::<_, u64>(&DataKey::MerchantId(address.clone()))
+}

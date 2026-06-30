@@ -425,3 +425,88 @@ pub struct MultiSigConfig {
     /// Number of approvals required to execute a proposal.
     pub quorum: u32,
 }
+
+// ── On-chain search and filtering utilities ───────────────────────────────────
+
+/// Filter parameters for querying subscription plans.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlanFilter {
+    /// Restrict to plans owned by this merchant address.
+    pub merchant: Option<Address>,
+    /// Restrict to active (`true`) or inactive (`false`) plans.
+    pub active: Option<bool>,
+    /// Restrict to plans billed in this token.
+    pub token: Option<Address>,
+}
+
+/// Filter parameters for querying individual subscriptions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionFilter {
+    /// Restrict to subscriptions belonging to this plan.
+    pub plan_id: Option<u64>,
+    /// Restrict to subscriptions held by this customer address.
+    pub customer: Option<Address>,
+    /// Restrict to Active (0) or Cancelled (1) subscriptions.
+    pub status: Option<u32>,
+}
+
+/// Filter parameters for querying on-chain events (ticketing).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventFilter {
+    /// Restrict to events owned by this merchant address.
+    pub merchant: Option<Address>,
+    /// When `true` only cancelled events are returned; `false` for active ones.
+    pub cancelled: Option<bool>,
+    /// Earliest `event_date` (unix seconds) to include.
+    pub start_date: Option<u64>,
+    /// Latest `event_date` (unix seconds) to include.
+    pub end_date: Option<u64>,
+    /// Only include events with at least this many remaining seats.
+    pub min_available: Option<u32>,
+}
+
+/// Filter parameters for querying withdrawal proposals.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalProposalFilter {
+    /// Restrict to proposals opened by this merchant address.
+    pub merchant: Option<Address>,
+    /// Restrict by proposal status (0=Pending, 1=Executed, 2=Cancelled).
+    pub status: Option<u32>,
+    /// Restrict to proposals for this token.
+    pub token: Option<Address>,
+    /// Only include proposals created at or after this timestamp.
+    pub created_after: Option<u64>,
+}
+
+/// A page of results together with cursor metadata for keyset pagination.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PageInfo {
+    /// Total items returned in this page.
+    pub count: u32,
+    /// ID of the last item in this page; pass as `cursor` in the next call.
+    /// `0` indicates there are no more pages.
+    pub next_cursor: u64,
+    /// Whether more pages follow.
+    pub has_next_page: bool,
+}
+
+/// A paginated slice of invoices.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvoicePage {
+    pub items: soroban_sdk::Vec<Invoice>,
+    pub page_info: PageInfo,
+}
+
+/// A paginated slice of merchants.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantPage {
+    pub items: soroban_sdk::Vec<Merchant>,
+    pub page_info: PageInfo,
+}

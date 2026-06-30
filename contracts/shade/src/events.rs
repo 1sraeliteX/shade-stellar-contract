@@ -1171,3 +1171,100 @@ pub fn publish_withdrawal_cancelled_event(
 ) {
     WithdrawalCancelledEvent { proposal_id, cancelled_by, timestamp }.publish(env);
 }
+
+// ── On-chain search and filtering events ─────────────────────────────────────
+
+/// Emitted when a paginated invoice query is executed, enabling off-chain
+/// indexers to observe query patterns and cache invalidation signals.
+#[contractevent]
+pub struct InvoiceSearchExecutedEvent {
+    /// Address of the caller that triggered the search.
+    pub caller: Address,
+    /// Number of results returned.
+    pub result_count: u32,
+    /// Whether a next page is available.
+    pub has_next_page: bool,
+    pub timestamp: u64,
+}
+
+pub fn publish_invoice_search_executed_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    has_next_page: bool,
+    timestamp: u64,
+) {
+    InvoiceSearchExecutedEvent {
+        caller,
+        result_count,
+        has_next_page,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when a subscription plan query is executed.
+#[contractevent]
+pub struct SubscriptionPlanSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_subscription_plan_search_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    SubscriptionPlanSearchExecutedEvent {
+        caller,
+        result_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when an event (ticketing) query is executed.
+#[contractevent]
+pub struct EventSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_event_search_executed_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    EventSearchExecutedEvent {
+        caller,
+        result_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when a withdrawal proposal query is executed.
+#[contractevent]
+pub struct WithdrawalProposalSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_proposal_search_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    WithdrawalProposalSearchExecutedEvent {
+        caller,
+        result_count,
+        timestamp,
+    }
+    .publish(env);
+}
