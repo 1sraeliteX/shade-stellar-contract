@@ -10,11 +10,13 @@ use soroban_sdk::{
     vec, Address, Env, String, Vec,
 };
 
+#[allow(dead_code)]
 #[contractclient(name = "InvoicePaymentClient")]
 trait InvoicePayment {
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
 }
 
+#[allow(dead_code)]
 #[contractclient(name = "MerchantAccountRefundClient")]
 trait MerchantAccountRefund {
     fn refund(env: Env, token: Address, amount: i128, to: Address);
@@ -855,7 +857,7 @@ impl CrowdfundContract {
             }
             sum = sum.saturating_add(p);
         }
-        if sum != 10_000 || percentages.len() == 0 {
+        if sum != 10_000 || percentages.is_empty() {
             panic_with_error!(&env, CrowdfundError::InvalidMilestonePercentages);
         }
 

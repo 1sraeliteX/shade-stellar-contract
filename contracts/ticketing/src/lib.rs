@@ -1076,7 +1076,7 @@ impl TicketingContract {
         publish_ticket_refunded_event(&env, ticket_id, event_id, holder, timestamp);
 
         // ── Auto-assign waitlist ──────────────────────────────────────────────
-        let mut waitlist = get_waitlist(&env, event_id);
+        let waitlist = get_waitlist(&env, event_id);
         if !waitlist.is_empty() {
             // Pop the front of the FIFO queue
             let first = waitlist.get(0).unwrap();
@@ -1092,12 +1092,8 @@ impl TicketingContract {
             // Generate a deterministic placeholder QR hash for the new ticket.
             // The assignee should replace this off-chain before the event.
             let mut placeholder = [0u8; 32];
-            let id_bytes = ticket_id.to_be_bytes();
-            let ts_bytes = timestamp.to_be_bytes();
-            for i in 0..8 {
-                placeholder[i] = id_bytes[i];
-                placeholder[i + 8] = ts_bytes[i];
-            }
+            placeholder[0..8].copy_from_slice(&ticket_id.to_be_bytes());
+            placeholder[8..16].copy_from_slice(&timestamp.to_be_bytes());
             let qr_hash = BytesN::from_array(&env, &placeholder);
 
             let new_ticket_id = mint_ticket(&env, event_id, assignee.clone(), qr_hash);

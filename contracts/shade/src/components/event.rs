@@ -220,11 +220,10 @@ pub fn configure_dynamic_pricing(
         panic_with_error!(env, ContractError::InvalidAmount);
     }
 
-    if early_bird_end != 0 {
-        if early_bird_end > event.event_date || early_bird_end < env.ledger().timestamp() {
+    if early_bird_end != 0
+        && (early_bird_end > event.event_date || early_bird_end < env.ledger().timestamp()) {
             panic_with_error!(env, ContractError::InvalidAmount);
         }
-    }
 
     event.early_bird_end = early_bird_end;
     event.early_bird_discount_bps = early_bird_discount_bps;

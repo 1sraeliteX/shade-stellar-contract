@@ -10,8 +10,7 @@ use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
     BridgeDeposit, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter,
-    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
-    PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
+    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
     Transaction, UpgradeProposal,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};

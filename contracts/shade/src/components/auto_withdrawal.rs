@@ -142,6 +142,7 @@ fn trigger_auto_withdrawal(
 ) {
     use soroban_sdk::contractclient;
 
+    #[allow(dead_code)]
     #[contractclient(name = "MerchantAccountAutoWithdrawalClient")]
     pub trait MerchantAccountAutoWithdrawal {
         fn withdraw_to(env: Env, token: Address, amount: i128, to: Address);

@@ -1,4 +1,6 @@
 #![no_std]
+// Subscription/plan entrypoints legitimately take more than 7 arguments.
+#![allow(clippy::too_many_arguments)]
 
 mod errors;
 #[cfg(test)]
@@ -577,7 +579,7 @@ impl SubscriptionContract {
         let source = plan.creator.as_ref().unwrap_or(&plan.merchant);
         let is_customer = sub.customer == caller;
         let is_merchant = plan.merchant == caller;
-        let is_creator = plan.creator.as_ref().map_or(false, |c| c == &caller);
+        let is_creator = plan.creator.as_ref() == Some(&caller);
         if !is_customer && !is_merchant && !is_creator {
             panic_with_error!(&env, SubscriptionError::NotAuthorized);
         }
