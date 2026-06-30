@@ -1,7 +1,7 @@
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{vec, Address, Env};
+use soroban_sdk::{vec, Address, Env, Vec};
 
 fn setup() -> (
     Env,
@@ -997,4 +997,214 @@ fn test_leave_comment_requires_existing_pledge() {
 
     let comment = soroban_sdk::String::from_str(&env, "No pledge yet");
     client.leave_comment(&contributor, &comment);
+}
+
+// ── Social recovery (#366) ──────────────────────────────────────────────────
+
+fn setup_guardians(
+    env: &Env,
+    client: &CrowdfundContractClient<'static>,
+    organizer: &Address,
+    count: u32,
+    threshold: u32,
+) -> Vec<Address> {
+    let mut guardians = Vec::new(env);
+    for _ in 0..count {
+        guardians.push_back(Address::generate(env));
+    }
+    client.set_guardians(organizer, &guardians, &threshold);
+    guardians
+}
+
+#[test]
+fn test_set_guardians_stores_threshold() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    assert_eq!(client.get_guardians(), guardians);
+    assert_eq!(client.get_guardian_threshold(), 2);
+    assert!(client.is_guardian(&guardians.get(0).unwrap()));
+}
+
+#[test]
+#[should_panic]
+fn test_set_guardians_zero_threshold_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    setup_guardians(&env, &client, &organizer, 3, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_set_guardians_threshold_above_count_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    setup_guardians(&env, &client, &organizer, 2, 3);
+}
+
+#[test]
+#[should_panic]
+fn test_set_guardians_duplicate_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+
+    let guardian = Address::generate(&env);
+    let guardians = vec![&env, guardian.clone(), guardian];
+    client.set_guardians(&organizer, &guardians, &1);
+}
+
+#[test]
+#[should_panic]
+fn test_non_organizer_cannot_set_guardians() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+
+    let not_organizer = Address::generate(&env);
+    let guardians = vec![&env, Address::generate(&env)];
+    client.set_guardians(&not_organizer, &guardians, &1);
+}
+
+#[test]
+fn test_initiate_and_approve_recovery_executes_at_threshold() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
+
+    assert_eq!(client.get_pending_recovery(), Some(new_organizer.clone()));
+    assert_eq!(client.get_recovery_approval_count(), 1);
+    // Still the old organizer until threshold is reached.
+    assert_eq!(client.organizer(), organizer);
+
+    client.approve_recovery(&guardians.get(1).unwrap());
+
+    assert_eq!(client.organizer(), new_organizer);
+    assert_eq!(client.get_pending_recovery(), None);
+    assert_eq!(client.get_recovery_approval_count(), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_non_guardian_cannot_initiate_recovery() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    setup_guardians(&env, &client, &organizer, 3, 2);
+
+    let stranger = Address::generate(&env);
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&stranger, &new_organizer);
+}
+
+#[test]
+#[should_panic]
+fn test_initiate_recovery_without_guardians_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+
+    let stranger = Address::generate(&env);
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&stranger, &new_organizer);
+}
+
+#[test]
+#[should_panic]
+fn test_double_initiate_recovery_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    let new_organizer_a = Address::generate(&env);
+    let new_organizer_b = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer_a);
+    client.initiate_recovery(&guardians.get(1).unwrap(), &new_organizer_b);
+}
+
+#[test]
+#[should_panic]
+fn test_guardian_cannot_approve_twice() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 3);
+
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
+    client.approve_recovery(&guardians.get(0).unwrap());
+}
+
+#[test]
+#[should_panic]
+fn test_approve_recovery_without_pending_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    client.approve_recovery(&guardians.get(0).unwrap());
+}
+
+#[test]
+fn test_organizer_can_cancel_pending_recovery() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
+    client.cancel_recovery(&organizer);
+
+    assert_eq!(client.get_pending_recovery(), None);
+    assert_eq!(client.organizer(), organizer);
+
+    // Guardian can re-initiate after cancellation.
+    client.initiate_recovery(&guardians.get(1).unwrap(), &new_organizer);
+    assert_eq!(client.get_pending_recovery(), Some(new_organizer));
+}
+
+#[test]
+#[should_panic]
+fn test_non_organizer_cannot_cancel_recovery() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
+
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
+
+    let stranger = Address::generate(&env);
+    client.cancel_recovery(&stranger);
+}
+
+#[test]
+fn test_recovered_organizer_can_execute_campaign() {
+    let (env, _contract, client, token, organizer, _contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &2_000, &deadline);
+    let guardians = setup_guardians(&env, &client, &organizer, 3, 1);
+
+    StellarAssetClient::new(&env, &token).mint(&organizer, &2_000);
+    client.contribute(&organizer, &2_000);
+
+    let new_organizer = Address::generate(&env);
+    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
+
+    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
+    client.execute_campaign();
+
+    assert_eq!(client.organizer(), new_organizer);
 }

@@ -106,6 +106,38 @@ pub struct BatchRefundProcessedEvent {
     pub contributor_count: u32,
 }
 
+#[contractevent]
+pub struct GuardiansSetEvent {
+    pub organizer: Address,
+    pub guardian_count: u32,
+    pub threshold: u32,
+}
+
+#[contractevent]
+pub struct RecoveryInitiatedEvent {
+    pub initiator: Address,
+    pub nominee: Address,
+}
+
+#[contractevent]
+pub struct RecoveryApprovedEvent {
+    pub guardian: Address,
+    pub approvals: u32,
+    pub threshold: u32,
+}
+
+#[contractevent]
+pub struct RecoveryExecutedEvent {
+    pub old_organizer: Address,
+    pub new_organizer: Address,
+}
+
+#[contractevent]
+pub struct RecoveryCancelledEvent {
+    pub organizer: Address,
+    pub nominee: Address,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -152,6 +184,16 @@ enum DataKey {
     MatchingPool,
     // Public comment attached to a contributor pledge.
     PledgeComment(Address),
+    // Guardian addresses configured for social recovery of this campaign (#366).
+    Guardians,
+    // Number of guardian approvals required to execute a recovery.
+    GuardianThreshold,
+    // Address nominated to become organizer if recovery succeeds.
+    RecoveryNominee,
+    // Tracks whether a specific guardian has approved the pending recovery.
+    RecoveryApproval(Address),
+    // Count of approvals collected for the pending recovery.
+    RecoveryApprovalCount,
 }
 
 #[contract]
@@ -961,6 +1003,243 @@ impl CrowdfundContract {
             .persistent()
             .get(&DataKey::Pledge(contributor))
             .unwrap_or(0)
+    }
+
+    // ── Social recovery (#366) ────────────────────────────────────────────────
+
+    /// Configure (or replace) the guardian set and approval threshold used for
+    /// social recovery of the organizer account. Organizer-only. Replacing the
+    /// guardian set while a recovery is pending is rejected to avoid a
+    /// guardian being silently dropped mid-vote.
+    pub fn set_guardians(env: Env, organizer: Address, guardians: Vec<Address>, threshold: u32) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        if env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::RecoveryAlreadyPending);
+        }
+
+        if threshold == 0 || threshold > guardians.len() {
+            panic_with_error!(&env, CrowdfundError::InvalidThreshold);
+        }
+
+        for i in 0..guardians.len() {
+            let g = guardians.get(i).unwrap();
+            for j in (i + 1)..guardians.len() {
+                if g == guardians.get(j).unwrap() {
+                    panic_with_error!(&env, CrowdfundError::DuplicateGuardian);
+                }
+            }
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Guardians, &guardians);
+        env.storage()
+            .persistent()
+            .set(&DataKey::GuardianThreshold, &threshold);
+
+        GuardiansSetEvent {
+            organizer,
+            guardian_count: guardians.len(),
+            threshold,
+        }
+        .publish(&env);
+    }
+
+    /// A guardian nominates a new organizer address and casts the first
+    /// approval. Fails if a recovery is already pending. If the threshold is
+    /// 1, this immediately executes the recovery.
+    pub fn initiate_recovery(env: Env, guardian: Address, new_organizer: Address) {
+        guardian.require_auth();
+        Self::require_guardian(&env, &guardian);
+
+        if env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::RecoveryAlreadyPending);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryNominee, &new_organizer);
+
+        RecoveryInitiatedEvent {
+            initiator: guardian.clone(),
+            nominee: new_organizer,
+        }
+        .publish(&env);
+
+        Self::record_approval_and_maybe_execute(&env, guardian);
+    }
+
+    /// A guardian approves the pending recovery. Once the configured
+    /// threshold of approvals is reached, the recovery executes immediately
+    /// and the nominee becomes the new organizer.
+    pub fn approve_recovery(env: Env, guardian: Address) {
+        guardian.require_auth();
+        Self::require_guardian(&env, &guardian);
+
+        if !env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::NoPendingRecovery);
+        }
+
+        Self::record_approval_and_maybe_execute(&env, guardian);
+    }
+
+    fn record_approval_and_maybe_execute(env: &Env, guardian: Address) {
+        let approval_key = DataKey::RecoveryApproval(guardian.clone());
+        if env
+            .storage()
+            .persistent()
+            .get(&approval_key)
+            .unwrap_or(false)
+        {
+            panic_with_error!(env, CrowdfundError::AlreadyApprovedRecovery);
+        }
+        env.storage().persistent().set(&approval_key, &true);
+
+        let threshold: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::GuardianThreshold)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::GuardiansNotSet));
+
+        let approvals: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RecoveryApprovalCount)
+            .unwrap_or(0)
+            + 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryApprovalCount, &approvals);
+
+        RecoveryApprovedEvent {
+            guardian,
+            approvals,
+            threshold,
+        }
+        .publish(env);
+
+        if approvals >= threshold {
+            let nominee: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::RecoveryNominee)
+                .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NoPendingRecovery));
+            let old_organizer: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Organizer)
+                .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Organizer, &nominee);
+
+            Self::clear_pending_recovery(env);
+
+            RecoveryExecutedEvent {
+                old_organizer,
+                new_organizer: nominee,
+            }
+            .publish(env);
+        }
+    }
+
+    /// The current organizer can cancel a pending recovery (e.g. if it was
+    /// not actually compromised). Requires organizer auth so a quorum of
+    /// guardians cannot be silently overridden by anyone else.
+    pub fn cancel_recovery(env: Env, organizer: Address) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        let nominee: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RecoveryNominee)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NoPendingRecovery));
+
+        Self::clear_pending_recovery(&env);
+
+        RecoveryCancelledEvent { organizer, nominee }.publish(&env);
+    }
+
+    pub fn get_guardians(env: Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    pub fn get_guardian_threshold(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GuardianThreshold)
+            .unwrap_or(0)
+    }
+
+    pub fn is_guardian(env: Env, address: Address) -> bool {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(&env));
+        guardians.iter().any(|g| g == address)
+    }
+
+    pub fn get_pending_recovery(env: Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::RecoveryNominee)
+    }
+
+    pub fn get_recovery_approval_count(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::RecoveryApprovalCount)
+            .unwrap_or(0)
+    }
+
+    fn require_guardian(env: &Env, guardian: &Address) {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::GuardiansNotSet));
+        if !guardians.iter().any(|g| &g == guardian) {
+            panic_with_error!(env, CrowdfundError::NotGuardian);
+        }
+    }
+
+    fn clear_pending_recovery(env: &Env) {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(env));
+        for guardian in guardians.iter() {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::RecoveryApproval(guardian));
+        }
+        env.storage().persistent().remove(&DataKey::RecoveryNominee);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::RecoveryApprovalCount);
     }
 
     // ── Read-only accessors ───────────────────────────────────────────────────

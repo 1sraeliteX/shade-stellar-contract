@@ -52,4 +52,18 @@ pub enum CrowdfundError {
     InsufficientMatchingPool = 26,
     // Pledge comment exceeds the configured maximum length.
     CommentTooLong = 27,
+    // Guardians have not been configured for this campaign (#366).
+    GuardiansNotSet = 28,
+    // Caller is not a configured guardian.
+    NotGuardian = 29,
+    // Threshold must be > 0 and <= guardian count.
+    InvalidThreshold = 30,
+    // Guardian list contains a duplicate address.
+    DuplicateGuardian = 31,
+    // A recovery is already pending; cancel or let it execute first.
+    RecoveryAlreadyPending = 32,
+    // No recovery is currently pending.
+    NoPendingRecovery = 33,
+    // This guardian has already approved the pending recovery.
+    AlreadyApprovedRecovery = 34,
 }
