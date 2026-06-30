@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::testutils::Address as _;
+use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{Address, BytesN, Env};
 
 fn register_campaign_ref(env: &Env, factory_id: &Address, organizer: Address, contract: Address) -> CampaignRef {

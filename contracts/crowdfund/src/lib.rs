@@ -92,6 +92,7 @@ pub struct PledgeCommentAddedEvent {
     pub comment: String,
 }
 
+#[contractevent]
 pub struct PledgeReceivedEvent {
     pub contributor: Address,
     pub amount: i128,
