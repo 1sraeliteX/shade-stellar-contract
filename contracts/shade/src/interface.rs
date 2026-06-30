@@ -1,7 +1,8 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    CrossChainBridgePayload, CrowdfundVestingConfig, Event, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    VestingTimeline,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +235,58 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Vesting Timeline Configuration ─────────────────────────────────────
+
+    /// Create a new vesting timeline for campaigns
+    fn create_vesting_timeline(
+        env: Env,
+        admin: Address,
+        name: String,
+        cliff_duration: u64,
+        vesting_duration: u64,
+        unlock_percentage: i128,
+    ) -> u64;
+
+    /// Fetch a vesting timeline by ID
+    fn get_vesting_timeline(env: Env, timeline_id: u64) -> VestingTimeline;
+
+    /// Update vesting timeline parameters
+    fn update_vesting_timeline(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        cliff_duration: u64,
+        vesting_duration: u64,
+    );
+
+    /// Configure vesting for a crowdfund campaign
+    fn configure_crowdfund_vesting(
+        env: Env,
+        admin: Address,
+        crowdfund_id: u64,
+        timeline_id: u64,
+        total_vesting_amount: i128,
+    );
+
+    /// Get vesting configuration for a crowdfund
+    fn get_crowdfund_vesting_config(env: Env, crowdfund_id: u64) -> CrowdfundVestingConfig;
+
+    /// Add a vesting schedule tranche
+    fn add_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+        unlock_amount: i128,
+        unlock_timestamp: u64,
+    );
+
+    /// Release a vesting schedule tranche
+    fn release_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+    );
 }

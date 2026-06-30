@@ -13,3 +13,4 @@ pub mod subscription;
 pub mod history;
 pub mod upgrade;
 pub mod event;
+pub mod vesting;

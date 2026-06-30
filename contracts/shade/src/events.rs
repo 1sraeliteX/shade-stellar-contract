@@ -1004,3 +1004,111 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+#[contractevent]
+pub struct VestingTimelineCreatedEvent {
+    pub timeline_id: u64,
+    pub name: String,
+    pub cliff_duration: u64,
+    pub vesting_duration: u64,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_vesting_timeline_created_event(
+    env: &Env,
+    timeline_id: u64,
+    name: String,
+    cliff_duration: u64,
+    vesting_duration: u64,
+    admin: Address,
+    timestamp: u64,
+) {
+    VestingTimelineCreatedEvent {
+        timeline_id,
+        name,
+        cliff_duration,
+        vesting_duration,
+        admin,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct VestingTimelineUpdatedEvent {
+    pub timeline_id: u64,
+    pub cliff_duration: u64,
+    pub vesting_duration: u64,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_vesting_timeline_updated_event(
+    env: &Env,
+    timeline_id: u64,
+    cliff_duration: u64,
+    vesting_duration: u64,
+    admin: Address,
+    timestamp: u64,
+) {
+    VestingTimelineUpdatedEvent {
+        timeline_id,
+        cliff_duration,
+        vesting_duration,
+        admin,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CrowdfundVestingConfiguredEvent {
+    pub crowdfund_id: u64,
+    pub timeline_id: u64,
+    pub total_vesting_amount: i128,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_crowdfund_vesting_configured_event(
+    env: &Env,
+    crowdfund_id: u64,
+    timeline_id: u64,
+    total_vesting_amount: i128,
+    admin: Address,
+    timestamp: u64,
+) {
+    CrowdfundVestingConfiguredEvent {
+        crowdfund_id,
+        timeline_id,
+        total_vesting_amount,
+        admin,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct VestingScheduleReleasedEvent {
+    pub timeline_id: u64,
+    pub tranche_index: u64,
+    pub release_amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_vesting_schedule_released_event(
+    env: &Env,
+    timeline_id: u64,
+    tranche_index: u64,
+    release_amount: i128,
+    timestamp: u64,
+) {
+    VestingScheduleReleasedEvent {
+        timeline_id,
+        tranche_index,
+        release_amount,
+        timestamp,
+    }
+    .publish(env);
+}

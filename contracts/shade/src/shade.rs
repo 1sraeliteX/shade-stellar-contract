@@ -2,15 +2,16 @@ use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    history as history_component, vesting as vesting_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
-    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
-    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    ContractInfo, CrowdfundVestingConfig, CrossChainBridgePayload, DataKey, Event, Invoice,
+    InvoiceFilter, Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction, VestingTimeline,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -571,5 +572,89 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    fn create_vesting_timeline(
+        env: Env,
+        admin: Address,
+        name: String,
+        cliff_duration: u64,
+        vesting_duration: u64,
+        unlock_percentage: i128,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::create_vesting_timeline(
+            &env,
+            admin,
+            name,
+            cliff_duration,
+            vesting_duration,
+            unlock_percentage,
+        )
+    }
+
+    fn get_vesting_timeline(env: Env, timeline_id: u64) -> VestingTimeline {
+        vesting_component::get_vesting_timeline(&env, timeline_id)
+    }
+
+    fn update_vesting_timeline(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        cliff_duration: u64,
+        vesting_duration: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::update_vesting_timeline(
+            &env,
+            admin,
+            timeline_id,
+            cliff_duration,
+            vesting_duration,
+        )
+    }
+
+    fn configure_crowdfund_vesting(
+        env: Env,
+        admin: Address,
+        crowdfund_id: u64,
+        timeline_id: u64,
+        total_vesting_amount: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::configure_crowdfund_vesting(&env, admin, crowdfund_id, timeline_id, total_vesting_amount)
+    }
+
+    fn get_crowdfund_vesting_config(env: Env, crowdfund_id: u64) -> CrowdfundVestingConfig {
+        vesting_component::get_crowdfund_vesting_config(&env, crowdfund_id)
+    }
+
+    fn add_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+        unlock_amount: i128,
+        unlock_timestamp: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::add_vesting_schedule(
+            &env,
+            admin,
+            timeline_id,
+            tranche_index,
+            unlock_amount,
+            unlock_timestamp,
+        )
+    }
+
+    fn release_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::release_vesting_schedule(&env, admin, timeline_id, tranche_index)
     }
 }

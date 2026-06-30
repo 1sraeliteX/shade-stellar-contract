@@ -47,6 +47,11 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Vesting timeline configuration ---
+    VestingTimeline(u64),
+    VestingTimelineCount,
+    VestingSchedule(u64, u64),
+    CrowdfundVestingConfig(u64),
 }
 
 #[contracttype]
@@ -357,4 +362,37 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// --- Vesting Timeline Configuration ---
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VestingTimeline {
+    pub id: u64,
+    pub name: String,
+    pub cliff_duration: u64,
+    pub vesting_duration: u64,
+    pub unlock_percentage: i128,
+    pub admin: Address,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VestingSchedule {
+    pub timeline_id: u64,
+    pub tranche_index: u64,
+    pub unlock_amount: i128,
+    pub unlock_timestamp: u64,
+    pub released: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CrowdfundVestingConfig {
+    pub crowdfund_id: u64,
+    pub timeline_id: u64,
+    pub total_vesting_amount: i128,
+    pub configured_at: u64,
 }
