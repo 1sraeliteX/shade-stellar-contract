@@ -66,4 +66,12 @@ pub enum CrowdfundError {
     NoPendingRecovery = 33,
     // This guardian has already approved the pending recovery.
     AlreadyApprovedRecovery = 34,
+    // Commission must be > 0 and <= 10 000 bps (100 %).
+    InvalidCommissionBps = 35,
+    // Address is already a registered affiliate.
+    AffiliateAlreadyRegistered = 36,
+    // Address is not a registered affiliate.
+    AffiliateNotRegistered = 37,
+    // Affiliate has no accrued commission to claim.
+    NoCommissionOwed = 38,
 }

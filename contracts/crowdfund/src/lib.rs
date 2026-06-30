@@ -3,6 +3,8 @@
 mod errors;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod tests;
 
 use errors::CrowdfundError;
 use soroban_sdk::{
@@ -101,6 +103,24 @@ pub struct PledgeReceivedEvent {
 }
 
 #[contractevent]
+pub struct AffiliateRegisteredEvent {
+    pub affiliate: Address,
+}
+
+#[contractevent]
+pub struct AffiliateAccruedEvent {
+    pub affiliate: Address,
+    pub contributor: Address,
+    pub commission: i128,
+}
+
+#[contractevent]
+pub struct AffiliateClaimedEvent {
+    pub affiliate: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
 pub struct BatchRefundProcessedEvent {
     pub total_refunded: i128,
     pub contributor_count: u32,
@@ -194,6 +214,12 @@ enum DataKey {
     RecoveryApproval(Address),
     // Count of approvals collected for the pending recovery.
     RecoveryApprovalCount,
+    // Commission rate (bps) paid to affiliates on referred pledges.
+    AffiliateCommissionBps,
+    // Whether an address is a registered affiliate.
+    Affiliate(Address),
+    // Unclaimed commission balance owed to an affiliate.
+    AffiliateBalance(Address),
 }
 
 #[contract]
@@ -460,6 +486,182 @@ impl CrowdfundContract {
             .persistent()
             .get(&DataKey::MatchingPool)
             .unwrap_or(0)
+    }
+
+    // ── Affiliate system (#351) ───────────────────────────────────────────────
+
+    /// Set the commission rate (bps, 1 bp = 0.01%) paid to affiliates on
+    /// pledges they refer. Organizer-only; callable any time, including
+    /// updates to a previously set rate.
+    pub fn set_affiliate_commission_bps(env: Env, organizer: Address, bps: u32) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        if bps == 0 || bps > 10_000 {
+            panic_with_error!(&env, CrowdfundError::InvalidCommissionBps);
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::AffiliateCommissionBps, &bps);
+    }
+
+    /// Register `affiliate` as eligible to refer pledges and earn commission.
+    /// Organizer-only.
+    pub fn register_affiliate(env: Env, organizer: Address, affiliate: Address) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        if env
+            .storage()
+            .persistent()
+            .get(&DataKey::Affiliate(affiliate.clone()))
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, CrowdfundError::AffiliateAlreadyRegistered);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Affiliate(affiliate.clone()), &true);
+        AffiliateRegisteredEvent { affiliate }.publish(&env);
+    }
+
+    /// Returns `true` if `affiliate` is a registered affiliate for this campaign.
+    pub fn is_affiliate(env: Env, affiliate: Address) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Affiliate(affiliate))
+            .unwrap_or(false)
+    }
+
+    /// Returns the unclaimed commission balance owed to `affiliate`.
+    pub fn affiliate_balance(env: Env, affiliate: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::AffiliateBalance(affiliate))
+            .unwrap_or(0)
+    }
+
+    /// Contribute `amount` tokens to the campaign via a registered `affiliate`,
+    /// accruing them a commission. Requires the caller to have pre-approved the
+    /// contract to spend at least `amount`. Panics after the deadline, if not
+    /// yet initialised, or if `affiliate` is not registered.
+    pub fn contribute_with_affiliate(
+        env: Env,
+        contributor: Address,
+        amount: i128,
+        affiliate: Address,
+    ) {
+        contributor.require_auth();
+
+        if amount <= 0 {
+            panic_with_error!(&env, CrowdfundError::InvalidAmount);
+        }
+
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        if env.ledger().timestamp() > deadline {
+            panic_with_error!(&env, CrowdfundError::CampaignEnded);
+        }
+
+        if !env
+            .storage()
+            .persistent()
+            .get(&DataKey::Affiliate(affiliate.clone()))
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, CrowdfundError::AffiliateNotRegistered);
+        }
+
+        let token_addr: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Token)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        let contract_addr = env.current_contract_address();
+        token::TokenClient::new(&env, &token_addr)
+            .transfer(&contributor, &contract_addr, &amount);
+
+        let new_raised = Self::apply_pledge_with_matching(&env, contributor.clone(), amount);
+        Self::track_contributor(&env, contributor.clone());
+        Self::check_stretch_goals(&env, new_raised);
+
+        let commission_bps: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AffiliateCommissionBps)
+            .unwrap_or(0);
+        if commission_bps > 0 {
+            let commission = amount * (commission_bps as i128) / 10_000;
+            if commission > 0 {
+                let current: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::AffiliateBalance(affiliate.clone()))
+                    .unwrap_or(0);
+                env.storage().persistent().set(
+                    &DataKey::AffiliateBalance(affiliate.clone()),
+                    &current.saturating_add(commission),
+                );
+                AffiliateAccruedEvent {
+                    affiliate,
+                    contributor,
+                    commission,
+                }
+                .publish(&env);
+            }
+        }
+    }
+
+    /// Claim all accrued commission for the calling affiliate.
+    pub fn claim_affiliate_commission(env: Env, affiliate: Address) {
+        affiliate.require_auth();
+
+        let balance: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AffiliateBalance(affiliate.clone()))
+            .unwrap_or(0);
+        if balance <= 0 {
+            panic_with_error!(&env, CrowdfundError::NoCommissionOwed);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::AffiliateBalance(affiliate.clone()), &0_i128);
+
+        let token_addr: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Token)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        let contract_addr = env.current_contract_address();
+        token::TokenClient::new(&env, &token_addr)
+            .transfer(&contract_addr, &affiliate, &balance);
+
+        AffiliateClaimedEvent {
+            affiliate,
+            amount: balance,
+        }
+        .publish(&env);
     }
 
     /// Withdraw funds to the organizer after deadline if goal was met (#303).
