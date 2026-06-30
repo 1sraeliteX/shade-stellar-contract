@@ -718,6 +718,170 @@ pub fn publish_bridge_deposit_recorded_event(
     .publish(env);
 }
 
+// ── DAO governance events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct GovMemberAddedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_added_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberAddedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovMemberRemovedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_removed_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberRemovedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovConfigSetEvent {
+    pub admin: Address,
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_config_set_event(
+    env: &Env,
+    admin: Address,
+    voting_period: u64,
+    quorum_bps: u32,
+    timestamp: u64,
+) {
+    GovConfigSetEvent {
+        admin,
+        voting_period,
+        quorum_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeProposedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub voting_ends_at: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposed_event(
+    env: &Env,
+    proposal_id: u64,
+    proposer: Address,
+    wasm_hash: BytesN<32>,
+    voting_ends_at: u64,
+    timestamp: u64,
+) {
+    UpgradeProposedEvent {
+        proposal_id,
+        proposer,
+        wasm_hash,
+        voting_ends_at,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeVoteCastEvent {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub approve: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_vote_cast_event(
+    env: &Env,
+    proposal_id: u64,
+    voter: Address,
+    approve: bool,
+    approvals: u32,
+    rejections: u32,
+    timestamp: u64,
+) {
+    UpgradeVoteCastEvent {
+        proposal_id,
+        voter,
+        approve,
+        approvals,
+        rejections,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeProposalFinalizedEvent {
+    pub proposal_id: u64,
+    pub executor: Address,
+    pub approved: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposal_finalized_event(
+    env: &Env,
+    proposal_id: u64,
+    executor: Address,
+    approved: bool,
+    approvals: u32,
+    rejections: u32,
+    member_count: u32,
+    timestamp: u64,
+) {
+    UpgradeProposalFinalizedEvent {
+        proposal_id,
+        executor,
+        approved,
+        approvals,
+        rejections,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
 // ── Subscription events ───────────────────────────────────────────────────────
 
 // Kept token field from your branch (more informative than main's leaner version).

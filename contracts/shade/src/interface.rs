@@ -2,6 +2,7 @@ use crate::types::{
     BridgeDeposit, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
     PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    UpgradeProposal,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -205,6 +206,39 @@ pub trait ShadeTrait {
 
     /// Cumulative amount credited to `recipient` for `token` via the bridge.
     fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128;
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    /// Register a governance council member. Admin only; idempotent.
+    fn add_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Revoke a governance council member. Admin only; idempotent.
+    fn remove_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Whether `member` is a current governance council member.
+    fn is_gov_member(env: Env, member: Address) -> bool;
+
+    /// Number of governance council members.
+    fn get_gov_member_count(env: Env) -> u32;
+
+    /// Configure the voting window (seconds) and approval quorum (bps). Admin only.
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32);
+
+    /// Open an upgrade proposal for the given WASM hash. Member only. Returns id.
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64;
+
+    /// Cast a vote on an active proposal within its window. Member only.
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool);
+
+    /// Finalize a proposal after voting closes: apply the upgrade if it passed,
+    /// otherwise mark it defeated. Member only.
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64);
+
+    /// Fetch an upgrade proposal by id, or `None` if it does not exist.
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal>;
+
+    /// Whether `member` has already voted on the given proposal.
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool;
 
     // --- Event ticketing system ---
     #[allow(clippy::too_many_arguments)]

@@ -60,6 +60,17 @@ pub enum DataKey {
     ProcessedBridgeDeposit(BytesN<32>),
     /// Cumulative amount credited to a recipient per token via the bridge.
     BridgeCredit(Address, Address),
+    // --- DAO governance for protocol upgrades ---
+    /// Singleton governance state: voting params + member/proposal counters.
+    /// Bundled into one key to stay within the `#[contracttype]` 50-case cap
+    /// and to minimize the number of distinct storage entries.
+    GovState,
+    /// Allowlist flag for a governance council member.
+    GovMember(Address),
+    /// Persisted upgrade proposal keyed by sequential id.
+    GovProposal(u64),
+    /// Records a member's vote on a proposal (presence ⇒ voted).
+    GovVote(u64, Address),
 }
 
 #[contracttype]
@@ -387,4 +398,44 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// ── DAO governance for protocol upgrades ──────────────────────────────────────
+
+/// Singleton governance configuration and counters. `voting_period == 0` is the
+/// sentinel for "not yet configured".
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovState {
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub member_count: u32,
+    pub proposal_count: u64,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProposalStatus {
+    /// Open for voting.
+    Active = 0,
+    /// Passed quorum + majority and the upgrade was applied.
+    Executed = 1,
+    /// Failed quorum or majority after the voting window closed.
+    Defeated = 2,
+}
+
+/// A council-governed proposal to upgrade the contract's WASM to `wasm_hash`.
+/// Voting is one-member-one-vote; `approvals`/`rejections` are head counts.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub created_at: u64,
+    pub voting_ends_at: u64,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub status: ProposalStatus,
 }

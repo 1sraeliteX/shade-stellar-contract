@@ -1,7 +1,7 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component,
-    bridge as bridge_component, core as core_component, invoice as invoice_component,
-    merchant as merchant_component, pausable as pausable_component,
+    bridge as bridge_component, core as core_component, governance as governance_component,
+    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component,
 };
@@ -12,7 +12,7 @@ use crate::types::{
     BridgeDeposit, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter,
     Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
     PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
-    Transaction,
+    Transaction, UpgradeProposal,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -503,6 +503,54 @@ impl ShadeTrait for Shade {
 
     fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128 {
         bridge_component::get_bridge_credit(&env, &recipient, &token)
+    }
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    fn add_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::add_gov_member(&env, &admin, &member);
+    }
+
+    fn remove_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::remove_gov_member(&env, &admin, &member);
+    }
+
+    fn is_gov_member(env: Env, member: Address) -> bool {
+        governance_component::is_gov_member(&env, &member)
+    }
+
+    fn get_gov_member_count(env: Env) -> u32 {
+        governance_component::get_gov_member_count(&env)
+    }
+
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::set_governance_config(&env, &admin, voting_period, quorum_bps);
+    }
+
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        governance_component::propose_upgrade(&env, &proposer, wasm_hash)
+    }
+
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::vote_on_upgrade(&env, &voter, proposal_id, approve);
+    }
+
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::finalize_upgrade(&env, &caller, proposal_id);
+    }
+
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal> {
+        governance_component::get_upgrade_proposal(&env, proposal_id)
+    }
+
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool {
+        governance_component::has_voted(&env, proposal_id, &member)
     }
 
     // --- Event ticketing system ---

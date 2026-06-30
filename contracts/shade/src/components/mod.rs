@@ -4,6 +4,7 @@ pub mod admin;
 pub mod bridge;
 pub mod auto_withdrawal;
 pub mod core;
+pub mod governance;
 pub mod invoice;
 pub mod merchant;
 pub mod pausable;

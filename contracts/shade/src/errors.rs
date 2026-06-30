@@ -56,3 +56,28 @@ pub enum ContractError {
     /// An external deposit with this origin-chain tx hash was already credited.
     BridgeDepositProcessed = 55,
 }
+
+/// DAO governance errors. Kept in a separate enum (codes offset to 100+) so the
+/// `ContractError` enum can stay within Soroban's hard cap of 50 cases while
+/// governance still has its own distinct, unambiguous error codes.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum GovernanceError {
+    /// Caller is not a registered governance council member.
+    NotGovMember = 100,
+    /// Governance voting parameters have not been configured.
+    GovNotConfigured = 101,
+    /// Supplied governance config is invalid (zero period or quorum > 100%).
+    InvalidGovConfig = 102,
+    /// No proposal exists for the supplied id.
+    ProposalNotFound = 103,
+    /// The proposal is no longer open (already executed or defeated).
+    ProposalNotActive = 104,
+    /// The voting window for this proposal has closed.
+    VotingClosed = 105,
+    /// The voting window is still open; the proposal cannot be finalized yet.
+    VotingStillOpen = 106,
+    /// This member has already voted on the proposal.
+    AlreadyVoted = 107,
+}
