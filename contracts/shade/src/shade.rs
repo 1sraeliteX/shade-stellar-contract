@@ -2,7 +2,7 @@ use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    history as history_component, cross_chain_pledge as cross_chain_pledge_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -570,6 +570,60 @@ impl ShadeTrait for Shade {
     }
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
-        admin_component::get_token_market_share(&env, &token)
+        admin_component::get_token_market_share(&env, token)
+    }
+
+    fn create_cross_chain_pledge(
+        env: Env,
+        source_chain: String,
+        source_pledge_id: u64,
+        destination_chain: String,
+        merchant: Address,
+        payer: Address,
+        token: Address,
+        amount: i128,
+        memo: Option<String>,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        cross_chain_pledge_component::create_pledge(
+            &env,
+            source_chain,
+            source_pledge_id,
+            destination_chain,
+            merchant,
+            payer,
+            token,
+            amount,
+            memo,
+        )
+    }
+
+    fn update_cross_chain_pledge_status(
+        env: Env,
+        pledge_id: u64,
+        new_status: crate::types::CrossChainPledgeStatus,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        cross_chain_pledge_component::update_pledge_status(
+            &env,
+            pledge_id,
+            new_status,
+        )
+    }
+
+    fn get_cross_chain_pledge(env: Env, pledge_id: u64) -> crate::types::CrossChainPledge {
+        cross_chain_pledge_component::get_pledge(&env, pledge_id)
+    }
+
+    fn get_cross_chain_pledge_by_source(
+        env: Env,
+        source_chain: String,
+        source_pledge_id: u64,
+    ) -> crate::types::CrossChainPledge {
+        cross_chain_pledge_component::get_pledge_by_source(&env, source_chain, source_pledge_id)
+    }
+
+    fn get_all_cross_chain_pledges(env: Env) -> soroban_sdk::Vec<crate::types::CrossChainPledge> {
+        cross_chain_pledge_component::get_all_pledges(&env)
     }
 }

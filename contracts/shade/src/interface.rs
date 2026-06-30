@@ -1,5 +1,5 @@
 use crate::types::{
-    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    CrossChainBridgePayload, CrossChainPledge, CrossChainPledgeStatus, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
     MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
     Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
 };
@@ -234,4 +234,37 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    /// Create a cross-chain pledge
+    fn create_cross_chain_pledge(
+        env: Env,
+        source_chain: String,
+        source_pledge_id: u64,
+        destination_chain: String,
+        merchant: Address,
+        payer: Address,
+        token: Address,
+        amount: i128,
+        memo: Option<String>,
+    ) -> u64;
+
+    /// Update the status of a cross-chain pledge
+    fn update_cross_chain_pledge_status(
+        env: Env,
+        pledge_id: u64,
+        new_status: CrossChainPledgeStatus,
+    );
+
+    /// Get a cross-chain pledge by ID
+    fn get_cross_chain_pledge(env: Env, pledge_id: u64) -> CrossChainPledge;
+
+    /// Get a cross-chain pledge by source chain and source pledge ID
+    fn get_cross_chain_pledge_by_source(
+        env: Env,
+        source_chain: String,
+        source_pledge_id: u64,
+    ) -> CrossChainPledge;
+
+    /// Get all cross-chain pledges
+    fn get_all_cross_chain_pledges(env: Env) -> Vec<CrossChainPledge>;
 }

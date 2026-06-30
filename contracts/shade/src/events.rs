@@ -637,6 +637,54 @@ pub fn publish_bridge_placeholder_event(
     .publish(env);
 }
 
+#[contractevent]
+pub struct CrossChainPledgeCreatedEvent {
+    pub pledge_id: u64,
+    pub source_chain: String,
+    pub source_pledge_id: u64,
+    pub merchant: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_cross_chain_pledge_created(
+    env: &Env,
+    pledge: &crate::types::CrossChainPledge,
+) {
+    CrossChainPledgeCreatedEvent {
+        pledge_id: pledge.id,
+        source_chain: pledge.source_chain.clone(),
+        source_pledge_id: pledge.source_pledge_id,
+        merchant: pledge.merchant.clone(),
+        payer: pledge.payer.clone(),
+        token: pledge.token.clone(),
+        amount: pledge.amount,
+        timestamp: pledge.created_at,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CrossChainPledgeUpdatedEvent {
+    pub pledge_id: u64,
+    pub status: crate::types::CrossChainPledgeStatus,
+    pub timestamp: u64,
+}
+
+pub fn publish_cross_chain_pledge_updated(
+    env: &Env,
+    pledge: &crate::types::CrossChainPledge,
+) {
+    CrossChainPledgeUpdatedEvent {
+        pledge_id: pledge.id,
+        status: pledge.status.clone(),
+        timestamp: pledge.updated_at,
+    }
+    .publish(env);
+}
+
 // ── Subscription events ───────────────────────────────────────────────────────
 
 // Kept token field from your branch (more informative than main's leaner version).
