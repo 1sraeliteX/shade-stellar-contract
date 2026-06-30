@@ -52,4 +52,12 @@ pub enum CrowdfundError {
     InsufficientMatchingPool = 26,
     // Pledge comment exceeds the configured maximum length.
     CommentTooLong = 27,
+    // Commission must be > 0 and <= 10 000 bps (100 %).
+    InvalidCommissionBps = 28,
+    // Address is already a registered affiliate.
+    AffiliateAlreadyRegistered = 29,
+    // Address is not a registered affiliate.
+    AffiliateNotRegistered = 30,
+    // Affiliate has no accrued commission to claim.
+    NoCommissionOwed = 31,
 }
