@@ -1,8 +1,8 @@
 use crate::types::{
-    BackerComment, CrossChainBridgePayload, CrowdfundVestingConfig, Event, Invoice,
-    InvoiceFilter, Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
-    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
-    TokenAnalytics, Transaction, VestingTimeline,
+    BackerComment, CrossChainBridgePayload, CrowdfundVestingConfig, DynamicHardCapConfig,
+    Event, HardCapVoting, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, VestingTimeline,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -317,4 +317,29 @@ pub trait ShadeTrait {
 
     /// Get all comments by a specific user
     fn get_user_comments(env: Env, user: Address) -> Vec<u64>;
+
+    // ── Dynamic Hard Caps based on Community Voting ───────────────────────
+
+    /// Initiate a voting session to adjust campaign hard cap
+    fn initiate_hard_cap_voting(
+        env: Env,
+        crowdfund_id: u64,
+        proposed_cap: i128,
+        voting_duration: u64,
+    );
+
+    /// Get voting session details
+    fn get_hard_cap_voting(env: Env, crowdfund_id: u64) -> HardCapVoting;
+
+    /// Cast a vote on hard cap adjustment
+    fn vote_on_hard_cap(env: Env, voter: Address, crowdfund_id: u64, support: bool);
+
+    /// Finalize voting and execute hard cap change if passed
+    fn finalize_hard_cap_voting(env: Env, admin: Address, crowdfund_id: u64);
+
+    /// Get current dynamic hard cap configuration
+    fn get_dynamic_hard_cap(env: Env, crowdfund_id: u64) -> DynamicHardCapConfig;
+
+    /// Get current hard cap value for a crowdfund
+    fn get_crowdfund_hard_cap(env: Env, crowdfund_id: u64) -> i128;
 }

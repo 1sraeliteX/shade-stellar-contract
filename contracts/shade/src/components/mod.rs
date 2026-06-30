@@ -15,3 +15,4 @@ pub mod upgrade;
 pub mod event;
 pub mod vesting;
 pub mod comments;
+pub mod voting;

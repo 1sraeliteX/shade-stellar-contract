@@ -57,4 +57,9 @@ pub enum ContractError {
     CommentAlreadyFlagged = 56,
     InvalidCommentStatus = 57,
     EmptyComment = 58,
+    VotingNotFound = 59,
+    VotingNotActive = 60,
+    AlreadyVoted = 61,
+    InvalidVoteAmount = 62,
+    InsufficientVotes = 63,
 }

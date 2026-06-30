@@ -1214,3 +1214,108 @@ pub fn publish_comment_moderation_applied_event(
     }
     .publish(env);
 }
+
+#[contractevent]
+pub struct HardCapVotingInitiatedEvent {
+    pub crowdfund_id: u64,
+    pub proposed_cap: i128,
+    pub voting_duration: u64,
+    pub voting_end: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_hard_cap_voting_initiated_event(
+    env: &Env,
+    crowdfund_id: u64,
+    proposed_cap: i128,
+    voting_duration: u64,
+    voting_end: u64,
+    timestamp: u64,
+) {
+    HardCapVotingInitiatedEvent {
+        crowdfund_id,
+        proposed_cap,
+        voting_duration,
+        voting_end,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct HardCapVotedEvent {
+    pub crowdfund_id: u64,
+    pub voter: Address,
+    pub proposed_cap: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_hard_cap_voted_event(
+    env: &Env,
+    crowdfund_id: u64,
+    voter: Address,
+    proposed_cap: i128,
+    timestamp: u64,
+) {
+    HardCapVotedEvent {
+        crowdfund_id,
+        voter,
+        proposed_cap,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct HardCapVotingFinalizedEvent {
+    pub crowdfund_id: u64,
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub passed: bool,
+    pub new_cap: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_hard_cap_voting_finalized_event(
+    env: &Env,
+    crowdfund_id: u64,
+    votes_for: u64,
+    votes_against: u64,
+    passed: bool,
+    new_cap: i128,
+    timestamp: u64,
+) {
+    HardCapVotingFinalizedEvent {
+        crowdfund_id,
+        votes_for,
+        votes_against,
+        passed,
+        new_cap,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct DynamicHardCapUpdatedEvent {
+    pub crowdfund_id: u64,
+    pub new_cap: i128,
+    pub previous_cap: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_dynamic_hard_cap_updated_event(
+    env: &Env,
+    crowdfund_id: u64,
+    new_cap: i128,
+    previous_cap: i128,
+    timestamp: u64,
+) {
+    DynamicHardCapUpdatedEvent {
+        crowdfund_id,
+        new_cap,
+        previous_cap,
+        timestamp,
+    }
+    .publish(env);
+}

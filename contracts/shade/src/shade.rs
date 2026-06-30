@@ -3,15 +3,17 @@ use crate::components::{
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component, vesting as vesting_component, comments as comments_component,
+    voting as voting_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::interface::ShadeTrait;
 use crate::types::{
     BackerComment, ContractInfo, CrowdfundVestingConfig, CrossChainBridgePayload, DataKey,
-    Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics, MerchantAnalyticsSummary,
-    MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role, Subscription,
-    SubscriptionPlan, Ticket, TokenAnalytics, Transaction, VestingTimeline,
+    DynamicHardCapConfig, Event, HardCapVoting, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    VestingTimeline,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -693,5 +695,37 @@ impl ShadeTrait for Shade {
 
     fn get_user_comments(env: Env, user: Address) -> Vec<u64> {
         comments_component::get_user_comments(&env, user)
+    }
+
+    fn initiate_hard_cap_voting(
+        env: Env,
+        crowdfund_id: u64,
+        proposed_cap: i128,
+        voting_duration: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::initiate_hard_cap_voting(&env, crowdfund_id, proposed_cap, voting_duration)
+    }
+
+    fn get_hard_cap_voting(env: Env, crowdfund_id: u64) -> HardCapVoting {
+        voting_component::get_hard_cap_voting(&env, crowdfund_id)
+    }
+
+    fn vote_on_hard_cap(env: Env, voter: Address, crowdfund_id: u64, support: bool) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::vote_on_hard_cap(&env, voter, crowdfund_id, support)
+    }
+
+    fn finalize_hard_cap_voting(env: Env, admin: Address, crowdfund_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::finalize_hard_cap_voting(&env, admin, crowdfund_id)
+    }
+
+    fn get_dynamic_hard_cap(env: Env, crowdfund_id: u64) -> DynamicHardCapConfig {
+        voting_component::get_dynamic_hard_cap(&env, crowdfund_id)
+    }
+
+    fn get_crowdfund_hard_cap(env: Env, crowdfund_id: u64) -> i128 {
+        voting_component::get_crowdfund_hard_cap(&env, crowdfund_id)
     }
 }

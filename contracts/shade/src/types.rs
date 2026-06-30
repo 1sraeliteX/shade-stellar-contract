@@ -58,6 +58,11 @@ pub enum DataKey {
     CrowdfundComments(u64),
     UserComments(Address),
     CommentFlag(u64),
+    // --- Dynamic hard caps based on community voting ---
+    HardCapVote(u64, Address),
+    HardCapVoting(u64),
+    VoteCount(u64),
+    DynamicHardCap(u64),
 }
 
 #[contracttype]
@@ -434,4 +439,58 @@ pub struct CommentFlag {
     pub flagger: Address,
     pub reason: String,
     pub flagged_at: u64,
+}
+
+// --- Dynamic Hard Cap Voting ---
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum VoteDirection {
+    Increase = 0,
+    Decrease = 1,
+    Maintain = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HardCapVote {
+    pub crowdfund_id: u64,
+    pub voter: Address,
+    pub proposed_cap: i128,
+    pub direction: VoteDirection,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HardCapVoting {
+    pub crowdfund_id: u64,
+    pub current_cap: i128,
+    pub proposed_cap: i128,
+    pub voting_start: u64,
+    pub voting_end: u64,
+    pub votes_for: u64,
+    pub votes_against: u64,
+    pub status: VotingStatus,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum VotingStatus {
+    Active = 0,
+    Passed = 1,
+    Failed = 2,
+    Executed = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DynamicHardCapConfig {
+    pub crowdfund_id: u64,
+    pub hard_cap: i128,
+    pub voting_duration: u64,
+    pub min_votes_required: u64,
+    pub last_updated: u64,
 }
