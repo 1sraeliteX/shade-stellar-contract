@@ -537,6 +537,33 @@ fn record_campaign_contribution_rejects_zero_amount() {
 }
 
 #[test]
+#[should_panic(expected = "Error(Contract, #65)")] // CampaignExpired
+fn record_campaign_contribution_rejects_expired_campaign() {
+    let f = setup();
+    let cat_id = f.client.create_campaign_category(
+        &f.admin,
+        &String::from_str(&f.env, "Tech"),
+        &String::from_str(&f.env, "desc"),
+    );
+    let id = f.client.create_campaign(
+        &f.merchant,
+        &String::from_str(&f.env, "C"),
+        &String::from_str(&f.env, "d"),
+        &cat_id,
+        &Vec::new(&f.env),
+        &1_000i128,
+        &f.token,
+        &future_deadline(&f.env),
+    );
+    // Advance the ledger past the deadline.
+    f.env
+        .ledger()
+        .with_mut(|l| l.timestamp = f.env.ledger().timestamp() + 90_000);
+    f.client
+        .record_campaign_contribution(&id, &f.merchant, &10i128);
+}
+
+#[test]
 fn get_campaigns_filters_by_category_and_tag() {
     let f = setup();
     let cat_tech = f.client.create_campaign_category(
