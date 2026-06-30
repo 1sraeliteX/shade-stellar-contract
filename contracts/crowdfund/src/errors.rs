@@ -54,4 +54,10 @@ pub enum CrowdfundError {
     CommentTooLong = 27,
     // Caller is not authorized for this privileged view (organizer only).
     NotAuthorized = 28,
+    // The backer already holds this badge.
+    BadgeAlreadyAwarded = 29,
+    // The backer does not meet this badge's on-chain eligibility rules.
+    BadgeNotEligible = 30,
+    // Badge eligibility thresholds have not been configured by the organizer.
+    BadgeConfigNotSet = 31,
 }

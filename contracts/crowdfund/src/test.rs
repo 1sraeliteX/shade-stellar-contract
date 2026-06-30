@@ -1099,3 +1099,211 @@ fn test_snapshot_rejects_non_organizer() {
     let _ = contributor;
     client.snapshot_campaign_stats(&stranger);
 }
+
+// ── Gamification: badges & achievements ──────────────────────────────────────
+
+fn setup_funded_campaign(
+    goal: i128,
+) -> (Env, CrowdfundContractClient<'static>, Address, Address, Address) {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &goal, &deadline);
+    (env, client, token, organizer, contributor)
+}
+
+#[test]
+fn test_first_backer_badge_awarded_and_queryable() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
+
+    // First contributor self-claims the FirstBacker badge.
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+    assert_eq!(client.badge_count(&contributor), 1);
+    assert!(client.badge_awarded_at(&contributor, &BadgeKind::FirstBacker).is_some());
+    assert_eq!(
+        client.get_backer_badges(&contributor),
+        vec![&env, BadgeKind::FirstBacker]
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_first_backer_badge_rejects_non_first() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
+    let _ = organizer;
+
+    // c2 is not the first backer.
+    client.award_badge(&c2, &c2, &BadgeKind::FirstBacker);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #29)")]
+fn test_badge_cannot_be_awarded_twice() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_award_badge_rejects_third_party() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    // A stranger (neither the backer nor organizer) cannot award.
+    let stranger = Address::generate(&env);
+    client.award_badge(&stranger, &contributor, &BadgeKind::FirstBacker);
+}
+
+#[test]
+fn test_organizer_can_award_on_behalf_of_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
+
+    client.award_badge(&organizer, &contributor, &BadgeKind::FirstBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_non_backer_is_ineligible() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    // An address that never pledged cannot earn any badge.
+    let outsider = Address::generate(&env);
+    client.award_badge(&organizer, &outsider, &BadgeKind::FirstBacker);
+}
+
+#[test]
+fn test_whale_badge_requires_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    assert!(client.has_badge(&contributor, &BadgeKind::Whale));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_whale_badge_rejects_below_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_whale_badge_requires_config() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+    let _ = env;
+
+    // No set_badge_config call → threshold unset.
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+}
+
+#[test]
+fn test_early_backer_badge_respects_limit() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
+    }
+
+    // First two contributors qualify; the third does not.
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&contributor, &contributor, &BadgeKind::EarlyBacker);
+    client.award_badge(&c2, &c2, &BadgeKind::EarlyBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::EarlyBacker));
+    assert!(client.has_badge(&c2, &BadgeKind::EarlyBacker));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_early_backer_badge_rejects_late_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
+    }
+
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&c3, &c3, &BadgeKind::EarlyBacker); // index 2, limit 2 → ineligible
+}
+
+#[test]
+fn test_goal_getter_badge_after_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(1_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised == goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    assert!(client.has_badge(&contributor, &BadgeKind::GoalGetter));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_goal_getter_badge_before_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(10_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised < goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_set_badge_config_rejects_non_organizer() {
+    let (env, client, _token, _organizer, _contributor) = setup_funded_campaign(10_000);
+    let stranger = Address::generate(&env);
+    client.set_badge_config(&stranger, &1_000, &5);
+}
+
+#[test]
+fn test_multiple_badges_accumulate() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000); // first backer, whale-sized, goal reached
+
+    client.set_badge_config(&organizer, &5_000, &5);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    // The award publishes a detailed event (checked on the latest invocation).
+    assert!(!env.events().all().is_empty());
+
+    assert_eq!(client.badge_count(&contributor), 3);
+    assert_eq!(client.get_backer_badges(&contributor).len(), 3);
+}

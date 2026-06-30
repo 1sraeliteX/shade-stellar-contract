@@ -144,6 +144,41 @@ pub struct CampaignStats {
     pub executed: bool,
 }
 
+/// Gamification achievement a backer can earn. Each kind has on-chain
+/// eligibility rules verified at award time (see `assert_badge_eligible`).
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum BadgeKind {
+    /// The very first backer to pledge to the campaign.
+    FirstBacker = 0,
+    /// A backer within the first `EarlyBackerLimit` contributors.
+    EarlyBacker = 1,
+    /// A backer whose total pledge meets the `WhaleThreshold`.
+    Whale = 2,
+    /// A backer of a campaign that reached its funding goal.
+    GoalGetter = 3,
+}
+
+/// Emitted whenever a backer earns a badge — carries full structural metadata
+/// for off-chain indexing and UI achievement feeds.
+#[contractevent]
+pub struct BadgeAwardedEvent {
+    pub backer: Address,
+    pub kind: BadgeKind,
+    pub awarded_by: Address,
+    pub awarded_at: u64,
+    pub badge_count: u32,
+}
+
+/// Emitted when the organizer (re)configures badge eligibility thresholds.
+#[contractevent]
+pub struct BadgeConfigSetEvent {
+    pub organizer: Address,
+    pub whale_threshold: i128,
+    pub early_backer_limit: u32,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -192,6 +227,14 @@ enum DataKey {
     PledgeComment(Address),
     // Cumulative sponsor-matched amount applied to pledges over the campaign's life.
     TotalMatched,
+    // Award timestamp for a backer's badge of a given kind (presence ⇒ owned).
+    Badge(Address, BadgeKind),
+    // Number of distinct badges a backer has earned.
+    BadgeCount(Address),
+    // Minimum total pledge required to earn the Whale badge.
+    WhaleThreshold,
+    // Backers within the first N contributors qualify for the EarlyBacker badge.
+    EarlyBackerLimit,
 }
 
 #[contract]
@@ -1029,7 +1072,199 @@ impl CrowdfundContract {
         stats
     }
 
+    // ── Gamification: badges & achievements ───────────────────────────────────
+
+    /// Configure (or update) badge eligibility thresholds. Organizer-only.
+    /// `whale_threshold` is the minimum total pledge for the Whale badge;
+    /// `early_backer_limit` is how many of the first contributors qualify for
+    /// the EarlyBacker badge.
+    pub fn set_badge_config(
+        env: Env,
+        organizer: Address,
+        whale_threshold: i128,
+        early_backer_limit: u32,
+    ) {
+        Self::require_organizer(&env, &organizer);
+        if whale_threshold <= 0 {
+            panic_with_error!(&env, CrowdfundError::InvalidAmount);
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::WhaleThreshold, &whale_threshold);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EarlyBackerLimit, &early_backer_limit);
+        BadgeConfigSetEvent {
+            organizer,
+            whale_threshold,
+            early_backer_limit,
+        }
+        .publish(&env);
+    }
+
+    /// Award `kind` to `backer` after verifying the badge's on-chain eligibility
+    /// rules. Callable by the backer themselves (self-claim) or by the organizer
+    /// (role-based check). Idempotent guard: a backer cannot earn the same badge
+    /// twice, so repeated/concurrent calls converge safely.
+    pub fn award_badge(env: Env, caller: Address, backer: Address, kind: BadgeKind) {
+        caller.require_auth();
+
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        if caller != backer && caller != organizer {
+            panic_with_error!(&env, CrowdfundError::NotAuthorized);
+        }
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Badge(backer.clone(), kind))
+        {
+            panic_with_error!(&env, CrowdfundError::BadgeAlreadyAwarded);
+        }
+
+        Self::assert_badge_eligible(&env, &backer, kind);
+
+        let now = env.ledger().timestamp();
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(backer.clone(), kind), &now);
+
+        let prev_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BadgeCount(backer.clone()))
+            .unwrap_or(0);
+        let badge_count = prev_count.saturating_add(1);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BadgeCount(backer.clone()), &badge_count);
+
+        BadgeAwardedEvent {
+            backer,
+            kind,
+            awarded_by: caller,
+            awarded_at: now,
+            badge_count,
+        }
+        .publish(&env);
+    }
+
+    /// Whether `backer` holds the given badge.
+    pub fn has_badge(env: Env, backer: Address, kind: BadgeKind) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Badge(backer, kind))
+    }
+
+    /// The ledger timestamp at which `backer` earned `kind`, if owned.
+    pub fn badge_awarded_at(env: Env, backer: Address, kind: BadgeKind) -> Option<u64> {
+        env.storage().persistent().get(&DataKey::Badge(backer, kind))
+    }
+
+    /// Number of distinct badges `backer` has earned.
+    pub fn badge_count(env: Env, backer: Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BadgeCount(backer))
+            .unwrap_or(0)
+    }
+
+    /// The full set of badges `backer` currently holds.
+    pub fn get_backer_badges(env: Env, backer: Address) -> Vec<BadgeKind> {
+        let mut owned: Vec<BadgeKind> = Vec::new(&env);
+        for kind in [
+            BadgeKind::FirstBacker,
+            BadgeKind::EarlyBacker,
+            BadgeKind::Whale,
+            BadgeKind::GoalGetter,
+        ] {
+            if env
+                .storage()
+                .persistent()
+                .has(&DataKey::Badge(backer.clone(), kind))
+            {
+                owned.push_back(kind);
+            }
+        }
+        owned
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /// Verify that `backer` satisfies the eligibility rules for `kind`,
+    /// panicking with `BadgeNotEligible` (or `BadgeConfigNotSet`) otherwise.
+    fn assert_badge_eligible(env: &Env, backer: &Address, kind: BadgeKind) {
+        // Every badge requires the holder to be an actual backer.
+        let pledge: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pledge(backer.clone()))
+            .unwrap_or(0);
+        if pledge <= 0 {
+            panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+        }
+
+        match kind {
+            BadgeKind::FirstBacker => {
+                let contributors: Vec<Address> = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Contributors)
+                    .unwrap_or_else(|| Vec::new(env));
+                let is_first = matches!(contributors.first(), Some(first) if first == *backer);
+                if !is_first {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::EarlyBacker => {
+                let limit: u32 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::EarlyBackerLimit)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::BadgeConfigNotSet));
+                let contributors: Vec<Address> = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Contributors)
+                    .unwrap_or_else(|| Vec::new(env));
+                let mut eligible = false;
+                for (i, c) in contributors.iter().enumerate() {
+                    if c == *backer {
+                        eligible = (i as u32) < limit;
+                        break;
+                    }
+                }
+                if !eligible {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::Whale => {
+                let threshold: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::WhaleThreshold)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::BadgeConfigNotSet));
+                if pledge < threshold {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::GoalGetter => {
+                let goal: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Goal)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+                let raised: i128 = env.storage().persistent().get(&DataKey::Raised).unwrap_or(0);
+                if raised < goal {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+        }
+    }
 
     /// Require that `caller` is the campaign organizer (authenticated).
     fn require_organizer(env: &Env, caller: &Address) {
