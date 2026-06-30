@@ -1,6 +1,7 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
-    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
+    invoice as invoice_component, merchant as merchant_component,
+    multisig_withdrawal as multisig_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component,
 };
@@ -11,6 +12,7 @@ use crate::types::{
     ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
     PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    WithdrawalProposal,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -571,5 +573,56 @@ impl ShadeTrait for Shade {
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
         admin_component::get_token_market_share(&env, &token)
+    }
+
+    // ── Multi-sig massive withdrawal ─────────────────────────────────────────
+
+    fn set_multisig_threshold(env: Env, admin: Address, token: Address, threshold: i128) {
+        pausable_component::assert_not_paused(&env);
+        multisig_component::set_multisig_threshold(&env, &admin, &token, threshold);
+    }
+
+    fn get_multisig_threshold(env: Env, token: Address) -> i128 {
+        multisig_component::get_multisig_threshold(&env, &token)
+            .unwrap_or_else(|| panic_with_error!(&env, ContractError::ThresholdNotSet))
+    }
+
+    fn configure_multisig(env: Env, admin: Address, signers: Vec<Address>, quorum: u32) {
+        pausable_component::assert_not_paused(&env);
+        multisig_component::configure_multisig(&env, &admin, signers, quorum);
+    }
+
+    fn propose_withdrawal(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+        note: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        multisig_component::propose_withdrawal(&env, &merchant, &token, amount, &recipient, note)
+    }
+
+    fn approve_withdrawal(env: Env, signer: Address, proposal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        multisig_component::approve_withdrawal(&env, &signer, proposal_id);
+    }
+
+    fn cancel_withdrawal(env: Env, caller: Address, proposal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        multisig_component::cancel_withdrawal(&env, &caller, proposal_id);
+    }
+
+    fn get_withdrawal_proposal(env: Env, proposal_id: u64) -> WithdrawalProposal {
+        multisig_component::get_withdrawal_proposal(&env, proposal_id)
+    }
+
+    fn has_approved_withdrawal(env: Env, signer: Address, proposal_id: u64) -> bool {
+        multisig_component::has_approved(&env, &signer, proposal_id)
+    }
+
+    fn get_withdrawal_proposal_count(env: Env) -> u64 {
+        multisig_component::get_proposal_count(&env)
     }
 }

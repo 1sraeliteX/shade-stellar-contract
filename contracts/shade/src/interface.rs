@@ -1,7 +1,7 @@
 use crate::types::{
     CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
     MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, WithdrawalProposal,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -234,4 +234,47 @@ pub trait ShadeTrait {
 
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
+
+    // ── Multi-sig massive withdrawal ─────────────────────────────────────────
+
+    /// Set the per-token withdrawal threshold above which multi-sig is required.
+    /// Admin-only.
+    fn set_multisig_threshold(env: Env, admin: Address, token: Address, threshold: i128);
+
+    /// Return the configured threshold for a token, or panic if not set.
+    fn get_multisig_threshold(env: Env, token: Address) -> i128;
+
+    /// Replace the signer list and required quorum.
+    /// Admin-only.  `signers` must be non-empty and `quorum` must be ≤ signers.len().
+    fn configure_multisig(env: Env, admin: Address, signers: Vec<Address>, quorum: u32);
+
+    /// Open a new withdrawal proposal for a large merchant withdrawal.
+    /// The amount must be ≥ the configured threshold for the token.
+    /// Returns the new proposal ID.
+    fn propose_withdrawal(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+        note: String,
+    ) -> u64;
+
+    /// Cast an approval vote on a pending withdrawal proposal.
+    /// Caller must be a registered signer.
+    /// When approvals reach quorum, funds are transferred automatically.
+    fn approve_withdrawal(env: Env, signer: Address, proposal_id: u64);
+
+    /// Cancel a pending withdrawal proposal.
+    /// Only the proposing merchant or the contract admin may cancel.
+    fn cancel_withdrawal(env: Env, caller: Address, proposal_id: u64);
+
+    /// Fetch a withdrawal proposal by ID.
+    fn get_withdrawal_proposal(env: Env, proposal_id: u64) -> WithdrawalProposal;
+
+    /// Check whether a signer has already approved a specific proposal.
+    fn has_approved_withdrawal(env: Env, signer: Address, proposal_id: u64) -> bool;
+
+    /// Return the total number of withdrawal proposals ever created.
+    fn get_withdrawal_proposal_count(env: Env) -> u64;
 }

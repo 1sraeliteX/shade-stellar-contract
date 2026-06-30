@@ -47,6 +47,19 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Multi-sig massive withdrawal ---
+    /// Threshold (in token base units) above which a withdrawal requires multi-sig approval.
+    MultiSigThreshold(Address),
+    /// Ordered list of addresses that are registered as multi-sig signers.
+    MultiSigSigners,
+    /// Required number of approvals before a pending withdrawal can execute.
+    MultiSigQuorum,
+    /// A specific pending withdrawal proposal, keyed by proposal ID.
+    WithdrawalProposal(u64),
+    /// Running counter for withdrawal proposal IDs.
+    WithdrawalProposalCount,
+    /// Whether a particular signer has approved a particular proposal.
+    WithdrawalApproval(u64, Address),
 }
 
 #[contracttype]
@@ -357,4 +370,58 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// ── Multi-sig massive withdrawal ──────────────────────────────────────────────
+
+/// Current lifecycle state of a withdrawal proposal.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum WithdrawalProposalStatus {
+    /// Awaiting the required number of signer approvals.
+    Pending = 0,
+    /// Quorum reached; funds have been transferred.
+    Executed = 1,
+    /// Cancelled by the proposer or an admin before execution.
+    Cancelled = 2,
+}
+
+/// A pending or completed massive-withdrawal proposal.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalProposal {
+    /// Unique, auto-incremented identifier.
+    pub id: u64,
+    /// Merchant whose balance is being withdrawn.
+    pub merchant: Address,
+    /// Token to withdraw.
+    pub token: Address,
+    /// Amount requested (in token base units).
+    pub amount: i128,
+    /// Destination address for the funds.
+    pub recipient: Address,
+    /// Number of approvals collected so far.
+    pub approvals: u32,
+    /// Current lifecycle status.
+    pub status: WithdrawalProposalStatus,
+    /// Ledger timestamp when the proposal was created.
+    pub created_at: u64,
+    /// Ledger timestamp of the last status change (approval/execution/cancellation).
+    pub updated_at: u64,
+    /// Optional human-readable note attached by the proposer.
+    pub note: soroban_sdk::String,
+}
+
+/// Runtime configuration for the multi-sig guard.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiSigConfig {
+    /// Minimum withdrawal amount that triggers multi-sig review (per token).
+    /// A value of 0 means multi-sig is disabled for that token.
+    pub threshold: i128,
+    /// Addresses authorised to approve withdrawal proposals.
+    pub signers: soroban_sdk::Vec<Address>,
+    /// Number of approvals required to execute a proposal.
+    pub quorum: u32,
 }

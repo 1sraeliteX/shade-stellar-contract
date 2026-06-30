@@ -1004,3 +1004,170 @@ pub fn publish_ticket_resold_event(
     }
     .publish(env);
 }
+
+// ── Multi-sig massive withdrawal events ───────────────────────────────────────
+
+/// Emitted when the admin configures the multi-sig threshold for a token.
+#[contractevent]
+pub struct MultiSigThresholdSetEvent {
+    /// Token the threshold applies to.
+    pub token: Address,
+    /// New threshold value in token base units.
+    pub threshold: i128,
+    /// Admin address that made the change.
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_multisig_threshold_set_event(
+    env: &Env,
+    token: Address,
+    threshold: i128,
+    admin: Address,
+    timestamp: u64,
+) {
+    MultiSigThresholdSetEvent { token, threshold, admin, timestamp }.publish(env);
+}
+
+/// Emitted when the admin updates the signer list or quorum.
+#[contractevent]
+pub struct MultiSigConfiguredEvent {
+    /// Snapshot of the new signer set.
+    pub signers: Vec<Address>,
+    /// New quorum value.
+    pub quorum: u32,
+    /// Admin address that made the change.
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_multisig_configured_event(
+    env: &Env,
+    signers: Vec<Address>,
+    quorum: u32,
+    admin: Address,
+    timestamp: u64,
+) {
+    MultiSigConfiguredEvent { signers, quorum, admin, timestamp }.publish(env);
+}
+
+/// Emitted when a merchant opens a new withdrawal proposal.
+#[contractevent]
+pub struct WithdrawalProposedEvent {
+    pub proposal_id: u64,
+    /// Merchant that created the proposal.
+    pub merchant: Address,
+    pub token: Address,
+    pub amount: i128,
+    /// Destination for the funds once approved.
+    pub recipient: Address,
+    /// Approvals needed for execution.
+    pub quorum_required: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_proposed_event(
+    env: &Env,
+    proposal_id: u64,
+    merchant: Address,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+    quorum_required: u32,
+    timestamp: u64,
+) {
+    WithdrawalProposedEvent {
+        proposal_id,
+        merchant,
+        token,
+        amount,
+        recipient,
+        quorum_required,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted each time a registered signer approves a proposal.
+#[contractevent]
+pub struct WithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    /// Signer that cast this approval.
+    pub signer: Address,
+    /// Running approval count after this vote.
+    pub approvals_so_far: u32,
+    /// Quorum still needed (0 means ready to execute).
+    pub quorum_required: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_approved_event(
+    env: &Env,
+    proposal_id: u64,
+    signer: Address,
+    approvals_so_far: u32,
+    quorum_required: u32,
+    timestamp: u64,
+) {
+    WithdrawalApprovedEvent {
+        proposal_id,
+        signer,
+        approvals_so_far,
+        quorum_required,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when quorum is reached and funds are transferred.
+#[contractevent]
+pub struct WithdrawalExecutedEvent {
+    pub proposal_id: u64,
+    pub merchant: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    /// Signer whose approval triggered execution.
+    pub executed_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_executed_event(
+    env: &Env,
+    proposal_id: u64,
+    merchant: Address,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+    executed_by: Address,
+    timestamp: u64,
+) {
+    WithdrawalExecutedEvent {
+        proposal_id,
+        merchant,
+        token,
+        amount,
+        recipient,
+        executed_by,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when a proposal is cancelled before execution.
+#[contractevent]
+pub struct WithdrawalCancelledEvent {
+    pub proposal_id: u64,
+    /// Address that cancelled (proposer or admin).
+    pub cancelled_by: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_cancelled_event(
+    env: &Env,
+    proposal_id: u64,
+    cancelled_by: Address,
+    timestamp: u64,
+) {
+    WithdrawalCancelledEvent { proposal_id, cancelled_by, timestamp }.publish(env);
+}
