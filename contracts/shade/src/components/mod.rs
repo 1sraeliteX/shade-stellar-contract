@@ -16,3 +16,4 @@ pub mod event;
 pub mod vesting;
 pub mod comments;
 pub mod voting;
+pub mod stretch_goals;

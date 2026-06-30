@@ -62,4 +62,8 @@ pub enum ContractError {
     AlreadyVoted = 61,
     InvalidVoteAmount = 62,
     InsufficientVotes = 63,
+    StretchGoalNotFound = 64,
+    StretchGoalNotUnlocked = 65,
+    GoalAlreadyUnlocked = 66,
+    RewardAlreadyClaimed = 67,
 }

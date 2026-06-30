@@ -63,6 +63,11 @@ pub enum DataKey {
     HardCapVoting(u64),
     VoteCount(u64),
     DynamicHardCap(u64),
+    // --- Automated stretch goal unlocking ---
+    StretchGoal(u64),
+    StretchGoalCount(u64),
+    CrowdfundStretchGoals(u64),
+    StretchGoalReward(u64),
 }
 
 #[contracttype]
@@ -493,4 +498,38 @@ pub struct DynamicHardCapConfig {
     pub voting_duration: u64,
     pub min_votes_required: u64,
     pub last_updated: u64,
+}
+
+// --- Stretch Goal Configuration ---
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum StretchGoalStatus {
+    Pending = 0,
+    Unlocked = 1,
+    Rewards_Distributed = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StretchGoal {
+    pub id: u64,
+    pub crowdfund_id: u64,
+    pub target_amount: i128,
+    pub description: String,
+    pub reward_description: String,
+    pub status: StretchGoalStatus,
+    pub created_at: u64,
+    pub unlocked_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StretchGoalReward {
+    pub goal_id: u64,
+    pub backer: Address,
+    pub reward_amount: i128,
+    pub claimed: bool,
+    pub created_at: u64,
 }

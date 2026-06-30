@@ -2,7 +2,8 @@ use crate::types::{
     BackerComment, CrossChainBridgePayload, CrowdfundVestingConfig, DynamicHardCapConfig,
     Event, HardCapVoting, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
     MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, VestingTimeline,
+    StretchGoal, StretchGoalReward, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
+    Transaction, VestingTimeline,
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -342,4 +343,40 @@ pub trait ShadeTrait {
 
     /// Get current hard cap value for a crowdfund
     fn get_crowdfund_hard_cap(env: Env, crowdfund_id: u64) -> i128;
+
+    // ── Automated Stretch Goal Unlocking ────────────────────────────────────
+
+    /// Create a new stretch goal for a campaign
+    fn create_stretch_goal(
+        env: Env,
+        merchant: Address,
+        crowdfund_id: u64,
+        target_amount: i128,
+        description: String,
+        reward_description: String,
+    ) -> u64;
+
+    /// Get a stretch goal by ID
+    fn get_stretch_goal(env: Env, goal_id: u64) -> StretchGoal;
+
+    /// Unlock a stretch goal when target is reached
+    fn unlock_stretch_goal(env: Env, admin: Address, goal_id: u64, current_amount: i128);
+
+    /// Distribute rewards to backers for unlocked goal
+    fn distribute_stretch_goal_reward(
+        env: Env,
+        admin: Address,
+        goal_id: u64,
+        backer: Address,
+        reward_amount: i128,
+    );
+
+    /// Claim stretch goal reward
+    fn claim_stretch_goal_reward(env: Env, backer: Address, goal_id: u64);
+
+    /// Get all stretch goals for a campaign
+    fn get_crowdfund_stretch_goals(env: Env, crowdfund_id: u64) -> Vec<u64>;
+
+    /// Get reward details for a stretch goal
+    fn get_stretch_goal_reward(env: Env, goal_id: u64) -> StretchGoalReward;
 }

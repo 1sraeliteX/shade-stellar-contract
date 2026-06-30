@@ -3,7 +3,7 @@ use crate::components::{
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
     history as history_component, vesting as vesting_component, comments as comments_component,
-    voting as voting_component,
+    voting as voting_component, stretch_goals as stretch_goals_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -12,8 +12,8 @@ use crate::types::{
     BackerComment, ContractInfo, CrowdfundVestingConfig, CrossChainBridgePayload, DataKey,
     DynamicHardCapConfig, Event, HardCapVoting, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
-    VestingTimeline,
+    PendingFee, Role, StretchGoal, StretchGoalReward, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction, VestingTimeline,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -727,5 +727,63 @@ impl ShadeTrait for Shade {
 
     fn get_crowdfund_hard_cap(env: Env, crowdfund_id: u64) -> i128 {
         voting_component::get_crowdfund_hard_cap(&env, crowdfund_id)
+    }
+
+    fn create_stretch_goal(
+        env: Env,
+        merchant: Address,
+        crowdfund_id: u64,
+        target_amount: i128,
+        description: String,
+        reward_description: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::create_stretch_goal(
+            &env,
+            merchant,
+            crowdfund_id,
+            target_amount,
+            description,
+            reward_description,
+        )
+    }
+
+    fn get_stretch_goal(env: Env, goal_id: u64) -> StretchGoal {
+        stretch_goals_component::get_stretch_goal(&env, goal_id)
+    }
+
+    fn unlock_stretch_goal(env: Env, admin: Address, goal_id: u64, current_amount: i128) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::unlock_stretch_goal(&env, admin, goal_id, current_amount)
+    }
+
+    fn distribute_stretch_goal_reward(
+        env: Env,
+        admin: Address,
+        goal_id: u64,
+        backer: Address,
+        reward_amount: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::distribute_stretch_goal_reward(
+            &env,
+            admin,
+            goal_id,
+            backer,
+            reward_amount,
+        )
+    }
+
+    fn claim_stretch_goal_reward(env: Env, backer: Address, goal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::claim_stretch_goal_reward(&env, backer, goal_id)
+    }
+
+    fn get_crowdfund_stretch_goals(env: Env, crowdfund_id: u64) -> Vec<u64> {
+        stretch_goals_component::get_crowdfund_stretch_goals(&env, crowdfund_id)
+    }
+
+    fn get_stretch_goal_reward(env: Env, goal_id: u64) -> StretchGoalReward {
+        stretch_goals_component::get_stretch_goal_reward(&env, goal_id)
     }
 }

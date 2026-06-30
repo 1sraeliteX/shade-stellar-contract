@@ -1319,3 +1319,102 @@ pub fn publish_dynamic_hard_cap_updated_event(
     }
     .publish(env);
 }
+
+#[contractevent]
+pub struct StretchGoalCreatedEvent {
+    pub goal_id: u64,
+    pub crowdfund_id: u64,
+    pub target_amount: i128,
+    pub description_length: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_stretch_goal_created_event(
+    env: &Env,
+    goal_id: u64,
+    crowdfund_id: u64,
+    target_amount: i128,
+    description_length: u64,
+    timestamp: u64,
+) {
+    StretchGoalCreatedEvent {
+        goal_id,
+        crowdfund_id,
+        target_amount,
+        description_length,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct StretchGoalUnlockedEvent {
+    pub goal_id: u64,
+    pub crowdfund_id: u64,
+    pub current_amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_stretch_goal_unlocked_event(
+    env: &Env,
+    goal_id: u64,
+    crowdfund_id: u64,
+    current_amount: i128,
+    timestamp: u64,
+) {
+    StretchGoalUnlockedEvent {
+        goal_id,
+        crowdfund_id,
+        current_amount,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct StretchGoalRewardDistributedEvent {
+    pub goal_id: u64,
+    pub backer: Address,
+    pub reward_amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_stretch_goal_reward_distributed_event(
+    env: &Env,
+    goal_id: u64,
+    backer: Address,
+    reward_amount: i128,
+    timestamp: u64,
+) {
+    StretchGoalRewardDistributedEvent {
+        goal_id,
+        backer,
+        reward_amount,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct StretchGoalRewardClaimedEvent {
+    pub goal_id: u64,
+    pub backer: Address,
+    pub reward_amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_stretch_goal_reward_claimed_event(
+    env: &Env,
+    goal_id: u64,
+    backer: Address,
+    reward_amount: i128,
+    timestamp: u64,
+) {
+    StretchGoalRewardClaimedEvent {
+        goal_id,
+        backer,
+        reward_amount,
+        timestamp,
+    }
+    .publish(env);
+}
