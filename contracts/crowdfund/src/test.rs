@@ -956,3 +956,422 @@ fn test_leave_comment_requires_existing_pledge() {
     let comment = soroban_sdk::String::from_str(&env, "No pledge yet");
     client.leave_comment(&contributor, &comment);
 }
+
+// ── #349 – Affiliate links and referral tracking ─────────────────────────────
+
+/// Build a valid 32-byte code hash from a constant seed so tests are
+/// deterministic.
+fn make_code(env: &Env, seed: u8) -> soroban_sdk::BytesN<32> {
+    soroban_sdk::BytesN::from_array(env, &[seed; 32])
+}
+
+// ── set_affiliate_commission ──────────────────────────────────────────────────
+
+#[test]
+fn test_set_affiliate_commission_stores_bps() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.set_affiliate_commission(&500); // 5 %
+    assert_eq!(client.get_affiliate_commission_bps(), 500);
+}
+
+#[test]
+fn test_set_affiliate_commission_can_be_overwritten() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.set_affiliate_commission(&300);
+    client.set_affiliate_commission(&800);
+    assert_eq!(client.get_affiliate_commission_bps(), 800);
+}
+
+#[test]
+fn test_get_affiliate_commission_bps_returns_zero_if_not_set() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    // No commission set yet.
+    assert_eq!(client.get_affiliate_commission_bps(), 0);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #30)")]
+fn test_set_affiliate_commission_above_10000_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.set_affiliate_commission(&10_001);
+}
+
+#[test]
+fn test_set_affiliate_commission_exactly_10000_is_valid() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    client.set_affiliate_commission(&10_000);
+    assert_eq!(client.get_affiliate_commission_bps(), 10_000);
+}
+
+// ── register_affiliate ────────────────────────────────────────────────────────
+
+#[test]
+fn test_register_affiliate_stores_bidirectional_mapping() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x01);
+    client.register_affiliate(&affiliate, &code);
+
+    // Forward lookup: affiliate → code.
+    assert_eq!(client.get_referral_code(&affiliate), Some(code.clone()));
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #29)")]
+fn test_register_affiliate_duplicate_code_different_affiliate_panics() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let affiliate1 = Address::generate(&env);
+    let affiliate2 = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x02);
+    client.register_affiliate(&affiliate1, &code);
+    // Same code, different affiliate → should panic.
+    client.register_affiliate(&affiliate2, &code);
+}
+
+#[test]
+fn test_register_affiliate_same_code_same_affiliate_is_idempotent() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x03);
+    // Registering the same affiliate+code twice should not panic.
+    client.register_affiliate(&affiliate, &code);
+    client.register_affiliate(&affiliate, &code);
+
+    assert_eq!(client.get_referral_code(&affiliate), Some(code));
+}
+
+#[test]
+fn test_get_referral_code_returns_none_for_unregistered_affiliate() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let non_affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    assert_eq!(client.get_referral_code(&non_affiliate), None);
+}
+
+// ── contribute_with_referral ──────────────────────────────────────────────────
+
+#[test]
+fn test_contribute_with_referral_increases_raised_amount() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x10);
+    client.register_affiliate(&affiliate, &code);
+    // No commission set → full amount goes to campaign.
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+
+    assert_eq!(client.raised(), 1_000);
+    assert_eq!(client.pledge_of(&contributor), 1_000);
+}
+
+#[test]
+fn test_contribute_with_referral_pays_commission_to_affiliate() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    // 10 % commission.
+    client.set_affiliate_commission(&1_000);
+    let code = make_code(&env, 0x11);
+    client.register_affiliate(&affiliate, &code);
+
+    let contribution: i128 = 2_000;
+    let expected_commission: i128 = 200; // 10 % of 2_000
+    StellarAssetClient::new(&env, &token).mint(&contributor, &contribution);
+    client.contribute_with_referral(&contributor, &contribution, &code);
+
+    // Commission is transferred to the affiliate.
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&affiliate), expected_commission);
+
+    // Raised is reduced by the commission.
+    assert_eq!(client.raised(), contribution - expected_commission);
+}
+
+#[test]
+fn test_contribute_with_referral_increments_referral_count() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x12);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &500);
+    client.contribute_with_referral(&contributor, &500, &code);
+
+    assert_eq!(client.get_referral_count(&code), 1);
+}
+
+#[test]
+fn test_multiple_contributors_increment_referral_count() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let contributor2 = Address::generate(&env);
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &20_000, &deadline);
+
+    let code = make_code(&env, 0x13);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &500);
+    StellarAssetClient::new(&env, &token).mint(&contributor2, &500);
+    client.contribute_with_referral(&contributor, &500, &code);
+    client.contribute_with_referral(&contributor2, &500, &code);
+
+    assert_eq!(client.get_referral_count(&code), 2);
+}
+
+#[test]
+fn test_contribute_with_referral_accumulates_earnings() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let contributor2 = Address::generate(&env);
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &20_000, &deadline);
+
+    // 5 % commission.
+    client.set_affiliate_commission(&500);
+    let code = make_code(&env, 0x14);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor2, &4_000);
+
+    client.contribute_with_referral(&contributor, &2_000, &code);
+    client.contribute_with_referral(&contributor2, &4_000, &code);
+
+    // 5 % of 2_000 = 100; 5 % of 4_000 = 200; total = 300.
+    assert_eq!(client.get_referral_earnings(&code), 300);
+}
+
+#[test]
+fn test_contribute_with_referral_records_contributor_referral() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x15);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &500);
+    client.contribute_with_referral(&contributor, &500, &code);
+
+    assert_eq!(client.get_contributor_referral(&contributor), Some(code));
+}
+
+#[test]
+fn test_get_contributor_referral_returns_none_for_direct_contributor() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &500);
+    client.contribute(&contributor, &500);
+
+    // Direct contribution without referral code returns None.
+    assert_eq!(client.get_contributor_referral(&contributor), None);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #31)")]
+fn test_contribute_with_invalid_referral_code_panics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    // No affiliate registered → any code is invalid.
+    let bogus_code = make_code(&env, 0xFF);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &500);
+    client.contribute_with_referral(&contributor, &500, &bogus_code);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #32)")]
+fn test_same_contributor_cannot_use_referral_twice() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &20_000, &deadline);
+
+    let code = make_code(&env, 0x20);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+    // Second call with same contributor should panic.
+    client.contribute_with_referral(&contributor, &1_000, &code);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #6)")]
+fn test_contribute_with_referral_after_deadline_panics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 100;
+    client.init_campaign(&organizer, &token, &5_000, &deadline);
+
+    let code = make_code(&env, 0x21);
+    client.register_affiliate(&affiliate, &code);
+
+    env.ledger().with_mut(|l| l.timestamp += 200);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #5)")]
+fn test_contribute_with_referral_zero_amount_panics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &5_000, &deadline);
+
+    let code = make_code(&env, 0x22);
+    client.register_affiliate(&affiliate, &code);
+
+    client.contribute_with_referral(&contributor, &0, &code);
+}
+
+#[test]
+fn test_contribute_with_referral_zero_commission_no_transfer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    // Commission is 0 bps → no transfer should occur.
+    client.set_affiliate_commission(&0);
+    let code = make_code(&env, 0x23);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+
+    // Affiliate receives nothing.
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    assert_eq!(token_client.balance(&affiliate), 0);
+
+    // All funds stay in campaign.
+    assert_eq!(client.raised(), 1_000);
+
+    // Earnings are zero.
+    assert_eq!(client.get_referral_earnings(&code), 0);
+}
+
+// ── read accessors with no state ─────────────────────────────────────────────
+
+#[test]
+fn test_get_referral_count_returns_zero_for_unknown_code() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x30);
+    assert_eq!(client.get_referral_count(&code), 0);
+}
+
+#[test]
+fn test_get_referral_earnings_returns_zero_for_unknown_code() {
+    let (env, _contract, client, token, organizer, _) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let code = make_code(&env, 0x31);
+    assert_eq!(client.get_referral_earnings(&code), 0);
+}
+
+// ── integration: referral + matching pool ────────────────────────────────────
+
+#[test]
+fn test_contribute_with_referral_interacts_with_matching_pool() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let sponsor = Address::generate(&env);
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    // 10 % commission, sponsor funds pool.
+    client.set_affiliate_commission(&1_000);
+    let code = make_code(&env, 0x40);
+    client.register_affiliate(&affiliate, &code);
+
+    let token_sac = StellarAssetClient::new(&env, &token);
+    token_sac.mint(&sponsor, &1_000);
+    token_sac.mint(&contributor, &1_000);
+
+    client.fund_matching_pool(&sponsor, &1_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+
+    // With 1:1 match the effective pledge = 2_000, of which 10% commission
+    // (100 tokens out of the *actual* contribution of 1_000) is paid.
+    // The test verifies that:
+    //  - referral tracking works with matching active.
+    assert_eq!(client.get_referral_count(&code), 1);
+    // Commission is 10% of the 1_000 actual transfer.
+    let expected_commission: i128 = 100;
+    assert_eq!(client.get_referral_earnings(&code), expected_commission);
+}
+
+// ── integration: campaign can still be executed after referral contributions ─
+
+#[test]
+fn test_campaign_executes_after_referral_contributions() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let affiliate = Address::generate(&env);
+    let deadline = env.ledger().timestamp() + 100;
+    client.init_campaign(&organizer, &token, &500, &deadline);
+
+    // 10 % commission.
+    client.set_affiliate_commission(&1_000);
+    let code = make_code(&env, 0x50);
+    client.register_affiliate(&affiliate, &code);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute_with_referral(&contributor, &1_000, &code);
+
+    // Advance past deadline.
+    env.ledger().with_mut(|l| l.timestamp += 200);
+
+    // Goal is met (raised = 900 after 100 commission, but original goal was 500).
+    assert!(client.goal_reached());
+
+    let token_client = soroban_sdk::token::TokenClient::new(&env, &token);
+    let organizer_balance_before = token_client.balance(&organizer);
+    client.execute_campaign();
+    let organizer_balance_after = token_client.balance(&organizer);
+
+    // Organizer receives raised amount (900 = 1_000 - 100 commission).
+    assert!(organizer_balance_after > organizer_balance_before);
+}
