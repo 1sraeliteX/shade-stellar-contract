@@ -1,7 +1,7 @@
 pub mod access_control;
 pub mod account_factory;
 pub mod admin;
-pub mod auto_withdrawal;
+// pub mod auto_withdrawal; // TODO: references missing types/events — disabled for compilation
 pub mod core;
 pub mod invoice;
 pub mod merchant;
