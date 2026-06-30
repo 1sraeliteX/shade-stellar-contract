@@ -36,6 +36,8 @@ pub enum DataKey {
     MerchantAnalytics(Address, Address),
     MerchantAnalyticsSummary(Address),
     PlatformAccount,
+    /// Per-merchant platform fee override in basis points for a token.
+    MerchantPlatformFee(u64, Address),
     TokenOracle(Address),
     // --- Event system ---
     Event(u64),
@@ -348,6 +350,24 @@ pub enum PaymentRoute {
 pub struct SwapRoute {
     pub router: Address,
     pub path: Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFeeSplit {
+    pub gross_amount: i128,
+    pub platform_fee: i128,
+    pub merchant_amount: i128,
+    pub fee_bps_applied: i128,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum PlatformFeeRouteKind {
+    Invoice = 0,
+    Subscription = 1,
+    TicketPurchase = 2,
 }
 
 #[contracttype]

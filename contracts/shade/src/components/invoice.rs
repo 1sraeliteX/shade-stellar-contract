@@ -1,9 +1,9 @@
-use crate::components::{access_control, admin, history, merchant, signature_util};
+use crate::components::{access_control, admin, history, merchant, platform_fee, signature_util};
 use crate::errors::ContractError;
 use crate::events;
 use crate::types::{
     DataKey, FiatPricing, FiatPricingData, Invoice, InvoiceFilter, InvoicePricingMode,
-    InvoiceStatus, Role, Transaction, TransactionType,
+    InvoiceStatus, PlatformFeeRouteKind, Role, Transaction, TransactionType,
 };
 use soroban_sdk::token::TokenClient;
 use soroban_sdk::{contractclient, panic_with_error, token, Address, BytesN, Env, String, Vec};
@@ -699,18 +699,21 @@ pub fn pay_invoice_partial(env: &Env, payer: &Address, invoice_id: u64, amount: 
     }
 
     let merchant_address: Address = merchant_id_to_address(env, invoice.merchant_id);
-    let fee_amount = admin::calculate_fee(env, &merchant_address, &invoice.token, amount);
     let merchant_account_id = merchant::get_merchant_account(env, invoice.merchant_id);
+    let split = platform_fee::route_from_payer(
+        env,
+        payer,
+        &merchant_address,
+        &merchant_account_id,
+        &invoice.token,
+        amount,
+        PlatformFeeRouteKind::Invoice,
+        invoice_id,
+        invoice.merchant_id,
+    );
+    let fee_amount = split.platform_fee;
+    let merchant_amount = split.merchant_amount;
     let platform_account = admin::get_platform_account(env);
-    let merchant_amount = amount - fee_amount;
-
-    let token_client = token::TokenClient::new(env, &invoice.token);
-
-    token_client.transfer(payer, &merchant_account_id, &merchant_amount);
-    if fee_amount > 0 {
-        token_client.transfer(payer, &platform_account, &fee_amount);
-    }
-    admin::record_merchant_payment(env, &merchant_address, &invoice.token, amount, fee_amount);
 
     invoice.amount_paid += amount;
     if let Some(existing_payer) = &invoice.payer {

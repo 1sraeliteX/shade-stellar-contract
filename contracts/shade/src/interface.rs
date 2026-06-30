@@ -1,7 +1,7 @@
 use crate::types::{
     CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
+    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee,
+    PlatformFeeSplit, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
 };
 use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
 
@@ -90,6 +90,26 @@ pub trait ShadeTrait {
         status: bool,
     );
     fn calculate_fee(env: Env, merchant: Address, token: Address, amount: i128) -> i128;
+    fn compute_platform_fee_split(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+    ) -> PlatformFeeSplit;
+    fn set_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+        fee_bps: i128,
+    );
+    fn get_merchant_platform_fee(env: Env, merchant_id: u64, token: Address) -> Option<i128>;
+    fn clear_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+    );
     fn get_merchant_volume(env: Env, merchant: Address, token: Address) -> i128;
     fn get_merchant_analytics(env: Env, merchant: Address, token: Address) -> MerchantAnalytics;
     fn get_merchant_analytics_summary(env: Env, merchant: Address) -> MerchantAnalyticsSummary;

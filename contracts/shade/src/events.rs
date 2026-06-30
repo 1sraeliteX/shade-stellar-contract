@@ -548,6 +548,108 @@ pub fn publish_payment_split_routed_event(
 }
 
 #[contractevent]
+pub struct PlatformFeeRoutedEvent {
+    pub route_kind: u32,
+    pub ref_id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub merchant_account: Address,
+    pub platform_account: Address,
+    pub payer: Address,
+    pub gross_amount: i128,
+    pub platform_fee: i128,
+    pub merchant_amount: i128,
+    pub token: Address,
+    pub fee_bps_applied: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_platform_fee_routed_event(
+    env: &Env,
+    route_kind: crate::types::PlatformFeeRouteKind,
+    ref_id: u64,
+    merchant_id: u64,
+    merchant: Address,
+    merchant_account: Address,
+    platform_account: Address,
+    payer: Address,
+    gross_amount: i128,
+    platform_fee: i128,
+    merchant_amount: i128,
+    token: Address,
+    fee_bps_applied: i128,
+    timestamp: u64,
+) {
+    PlatformFeeRoutedEvent {
+        route_kind: route_kind as u32,
+        ref_id,
+        merchant_id,
+        merchant,
+        merchant_account,
+        platform_account,
+        payer,
+        gross_amount,
+        platform_fee,
+        merchant_amount,
+        token,
+        fee_bps_applied,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct MerchantPlatformFeeSetEvent {
+    pub caller: Address,
+    pub merchant_id: u64,
+    pub token: Address,
+    pub fee_bps: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_merchant_platform_fee_set_event(
+    env: &Env,
+    caller: Address,
+    merchant_id: u64,
+    token: Address,
+    fee_bps: i128,
+    timestamp: u64,
+) {
+    MerchantPlatformFeeSetEvent {
+        caller,
+        merchant_id,
+        token,
+        fee_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct MerchantPlatformFeeClearedEvent {
+    pub caller: Address,
+    pub merchant_id: u64,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_merchant_platform_fee_cleared_event(
+    env: &Env,
+    caller: Address,
+    merchant_id: u64,
+    token: Address,
+    timestamp: u64,
+) {
+    MerchantPlatformFeeClearedEvent {
+        caller,
+        merchant_id,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
 pub struct InvoiceCancelledEvent {
     pub invoice_id: u64,
     pub merchant: Address,

@@ -1,8 +1,8 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
-    subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    platform_fee as platform_fee_component, subscription as subscription_component,
+    upgrade as upgrade_component, history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -10,7 +10,8 @@ use crate::interface::ShadeTrait;
 use crate::types::{
     ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    PendingFee, PlatformFeeSplit, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
+    Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -290,6 +291,51 @@ impl ShadeTrait for Shade {
 
     fn calculate_fee(env: Env, merchant: Address, token: Address, amount: i128) -> i128 {
         admin_component::calculate_fee(&env, &merchant, &token, amount)
+    }
+
+    fn compute_platform_fee_split(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+    ) -> PlatformFeeSplit {
+        platform_fee_component::compute_split(&env, &merchant, &token, amount)
+    }
+
+    fn set_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+        fee_bps: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::set_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+            fee_bps,
+        );
+    }
+
+    fn get_merchant_platform_fee(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        platform_fee_component::get_merchant_platform_fee(&env, merchant_id, &token)
+    }
+
+    fn clear_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::clear_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+        );
     }
 
     fn get_merchant_volume(env: Env, merchant: Address, token: Address) -> i128 {

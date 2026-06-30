@@ -7,6 +7,7 @@ pub mod invoice;
 pub mod merchant;
 pub mod pausable;
 pub mod payment;
+pub mod platform_fee;
 pub mod reentrancy;
 pub mod signature_util;
 pub mod subscription;

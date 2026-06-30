@@ -1,7 +1,7 @@
-use crate::components::{admin, merchant};
+use crate::components::{admin, merchant, platform_fee};
 use crate::errors::ContractError;
 use crate::events;
-use crate::types::{DataKey, Event, Merchant, Ticket};
+use crate::types::{DataKey, Event, Merchant, PlatformFeeRouteKind, Ticket};
 use soroban_sdk::{panic_with_error, token, Address, Env, String, Vec};
 
 const MAX_BPS: u32 = 10_000;
@@ -124,22 +124,21 @@ pub fn purchase_ticket(env: &Env, event_id: &u64, buyer: &Address) -> u64 {
 
     let merchant_address = merchant_id_to_address(env, event.merchant_id);
     let merchant_account = merchant::get_merchant_account(env, event.merchant_id);
-    let platform_account = admin::get_platform_account(env);
 
     let amount = resolve_current_ticket_price(env, &event);
-    let fee = admin::calculate_fee(env, &merchant_address, &event.token, amount);
-    if fee < 0 || fee >= amount {
-        panic_with_error!(env, ContractError::InvalidAmount);
-    }
-    let merchant_amount = amount - fee;
-
-    let token_client = token::TokenClient::new(env, &event.token);
-    token_client.transfer(buyer, &merchant_account, &merchant_amount);
-    if fee > 0 {
-        token_client.transfer(buyer, &platform_account, &fee);
-    }
-
-    admin::record_merchant_payment(env, &merchant_address, &event.token, amount, fee);
+    let split = platform_fee::route_from_payer(
+        env,
+        buyer,
+        &merchant_address,
+        &merchant_account,
+        &event.token,
+        amount,
+        PlatformFeeRouteKind::TicketPurchase,
+        *event_id,
+        event.merchant_id,
+    );
+    let fee = split.platform_fee;
+    let merchant_amount = split.merchant_amount;
 
     let new_ticket_id = env
         .storage()
