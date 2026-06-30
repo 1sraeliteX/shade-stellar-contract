@@ -49,7 +49,14 @@ fn setup_test_with_auto_withdrawal() -> (
     merchant_account.initialize(&merchant, &shade_contract_id, &1_u64);
     shade_client.set_merchant_account(&merchant, &merchant_account_id);
 
-    (env, shade_client, shade_contract_id, admin, merchant, token.address())
+    (
+        env,
+        shade_client,
+        shade_contract_id,
+        admin,
+        merchant,
+        token.address(),
+    )
 }
 
 #[test]
@@ -139,7 +146,10 @@ fn test_auto_withdrawal_triggered_on_payment() {
 
     // Verify recipient received funds (should be ~9500 after fee)
     let recipient_balance = token_client.balance(&recipient);
-    assert!(recipient_balance > 0, "Recipient should have received funds");
+    assert!(
+        recipient_balance > 0,
+        "Recipient should have received funds"
+    );
 }
 
 #[test]

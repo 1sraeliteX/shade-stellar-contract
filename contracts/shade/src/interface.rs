@@ -171,11 +171,7 @@ pub trait ShadeTrait {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction>;
 
     // ── Cross-chain bridge placeholder ───────────────────────────────────────
-    fn emit_bridge_placeholder(
-        env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    );
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload);
 
     // ── Bridge listener / external deposits ──────────────────────────────────
 
@@ -268,13 +264,7 @@ pub trait ShadeTrait {
     );
     fn get_current_ticket_price(env: Env, event_id: u64) -> i128;
     fn cancel_event_and_batch_refund(env: Env, merchant: Address, event_id: u64);
-    fn resell_ticket(
-        env: Env,
-        seller: Address,
-        buyer: Address,
-        ticket_id: u64,
-        resale_price: i128,
-    );
+    fn resell_ticket(env: Env, seller: Address, buyer: Address, ticket_id: u64, resale_price: i128);
     fn get_event(env: Env, event_id: u64) -> Event;
     fn get_ticket(env: Env, ticket_id: u64) -> Ticket;
     fn get_event_tickets(env: Env, event_id: u64) -> Vec<u64>;

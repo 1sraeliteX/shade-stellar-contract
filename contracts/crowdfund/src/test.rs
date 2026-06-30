@@ -3,7 +3,14 @@ use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{vec, Address, Env};
 
-fn setup() -> (Env, Address, CrowdfundContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    Address,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|l| l.timestamp = 1_000_000);
@@ -380,8 +387,14 @@ fn test_select_reward_tier_maps_pledge_to_tier() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &500);
@@ -400,8 +413,14 @@ fn test_select_reward_tier_can_be_updated() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &600);
@@ -424,7 +443,10 @@ fn test_select_reward_tier_below_minimum_panics() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &100);
@@ -443,7 +465,10 @@ fn test_select_invalid_tier_index_panics() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &500);
@@ -464,7 +489,14 @@ fn test_get_selected_tier_returns_none_before_selection() {
 
 // ── #311 – Milestone-based fund release ──────────────────────────────────────
 
-fn setup_milestone_campaign() -> (Env, Address, CrowdfundContractClient<'static>, Address, Address, Address) {
+fn setup_milestone_campaign() -> (
+    Env,
+    Address,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let (env, contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &10_000, &deadline);
@@ -508,7 +540,9 @@ fn setup_governed_milestone_campaign() -> (
 
     env.ledger().with_mut(|l| l.timestamp += 86_401);
 
-    (env, contract, client, token, organizer, voter1, voter2, voter3)
+    (
+        env, contract, client, token, organizer, voter1, voter2, voter3,
+    )
 }
 
 #[test]
@@ -664,8 +698,14 @@ fn milestone_without_majority_cannot_release_funds() {
 fn tiers(env: &Env) -> soroban_sdk::Vec<RewardTier> {
     soroban_sdk::vec![
         env,
-        RewardTier { min_pledge: 200, name: soroban_sdk::String::from_str(env, "Silver") },
-        RewardTier { min_pledge: 1_000, name: soroban_sdk::String::from_str(env, "Gold") },
+        RewardTier {
+            min_pledge: 200,
+            name: soroban_sdk::String::from_str(env, "Silver")
+        },
+        RewardTier {
+            min_pledge: 1_000,
+            name: soroban_sdk::String::from_str(env, "Gold")
+        },
     ]
 }
 
@@ -768,7 +808,9 @@ fn test_non_organizer_cannot_fulfill_reward() {
     let client2 = CrowdfundContractClient::new(&env2, &contract2);
     env2.ledger().with_mut(|l| l.timestamp = 1_000_000);
     let org2 = Address::generate(&env2);
-    let tok2 = env2.register_stellar_asset_contract_v2(org2.clone()).address();
+    let tok2 = env2
+        .register_stellar_asset_contract_v2(org2.clone())
+        .address();
     let con2 = Address::generate(&env2);
     client2.init_campaign(&org2, &tok2, &100, &(env2.ledger().timestamp() + 1_000));
     // No mock_all_auths — calling fulfill_reward as non-organizer must panic.
@@ -1104,7 +1146,13 @@ fn test_snapshot_rejects_non_organizer() {
 
 fn setup_funded_campaign(
     goal: i128,
-) -> (Env, CrowdfundContractClient<'static>, Address, Address, Address) {
+) -> (
+    Env,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let (env, _contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &goal, &deadline);
@@ -1125,7 +1173,9 @@ fn test_first_backer_badge_awarded_and_queryable() {
 
     assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
     assert_eq!(client.badge_count(&contributor), 1);
-    assert!(client.badge_awarded_at(&contributor, &BadgeKind::FirstBacker).is_some());
+    assert!(client
+        .badge_awarded_at(&contributor, &BadgeKind::FirstBacker)
+        .is_some());
     assert_eq!(
         client.get_backer_badges(&contributor),
         vec![&env, BadgeKind::FirstBacker]

@@ -39,7 +39,14 @@ fn setup(quorum_bps: u32) -> GovCtx<'static> {
     client.set_governance_config(&admin, &VOTING_PERIOD, &quorum_bps);
 
     let wasm_hash = env.deployer().upload_contract_wasm(V2_WASM);
-    GovCtx { env, client, contract_id, admin, members, wasm_hash }
+    GovCtx {
+        env,
+        client,
+        contract_id,
+        admin,
+        members,
+        wasm_hash,
+    }
 }
 
 fn advance_past_voting(ctx: &GovCtx) {
@@ -83,7 +90,8 @@ fn test_non_admin_cannot_add_member() {
 fn test_invalid_config_rejected() {
     let ctx = setup(6_000);
     // quorum > 100%
-    ctx.client.set_governance_config(&ctx.admin, &VOTING_PERIOD, &10_001);
+    ctx.client
+        .set_governance_config(&ctx.admin, &VOTING_PERIOD, &10_001);
 }
 
 // ── Proposal lifecycle ────────────────────────────────────────────────────────
@@ -91,9 +99,7 @@ fn test_invalid_config_rejected() {
 #[test]
 fn test_full_upgrade_flow_passes_and_executes() {
     let ctx = setup(6_000); // required = ceil(3 * 0.6) = 2
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     assert_eq!(id, 1);
 
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
@@ -123,9 +129,7 @@ fn test_full_upgrade_flow_passes_and_executes() {
 #[test]
 fn test_proposal_defeated_when_quorum_not_reached() {
     let ctx = setup(6_000); // required = 2 approving-side votes total
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
 
     // Only one member votes → total votes (1) < required quorum (2).
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
@@ -142,9 +146,7 @@ fn test_proposal_defeated_when_quorum_not_reached() {
 #[test]
 fn test_proposal_defeated_on_tie() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
 
     // Quorum met (2 votes) but no majority (1 approve, 1 reject).
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
@@ -171,9 +173,7 @@ fn test_non_member_cannot_propose() {
 #[should_panic(expected = "Error(Contract, #100)")]
 fn test_non_member_cannot_vote() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     let stranger = Address::generate(&ctx.env);
     ctx.client.vote_on_upgrade(&stranger, &id, &true);
 }
@@ -182,9 +182,7 @@ fn test_non_member_cannot_vote() {
 #[should_panic(expected = "Error(Contract, #107)")]
 fn test_double_vote_rejected() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
 }
@@ -193,9 +191,7 @@ fn test_double_vote_rejected() {
 #[should_panic(expected = "Error(Contract, #105)")]
 fn test_vote_after_window_closed_rejected() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     advance_past_voting(&ctx);
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
 }
@@ -204,9 +200,7 @@ fn test_vote_after_window_closed_rejected() {
 #[should_panic(expected = "Error(Contract, #106)")]
 fn test_finalize_before_window_closes_rejected() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);
     // Voting window still open.
     ctx.client.finalize_upgrade(&ctx.members[1], &id);
@@ -216,9 +210,7 @@ fn test_finalize_before_window_closes_rejected() {
 #[should_panic(expected = "Error(Contract, #104)")]
 fn test_cannot_finalize_twice() {
     let ctx = setup(6_000);
-    let id = ctx
-        .client
-        .propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
+    let id = ctx.client.propose_upgrade(&ctx.members[0], &ctx.wasm_hash);
     // A single vote leaves the proposal short of quorum, so finalizing marks it
     // Defeated without swapping the WASM — letting us call finalize again.
     ctx.client.vote_on_upgrade(&ctx.members[0], &id, &true);

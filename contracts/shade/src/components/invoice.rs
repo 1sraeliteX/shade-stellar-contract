@@ -574,7 +574,12 @@ pub fn get_invoices(env: &Env, filter: InvoiceFilter) -> Vec<Invoice> {
 }
 //no new changes to add
 
-pub fn refund_invoice_partial(env: &Env, merchant_address: &Address, invoice_id: u64, amount: i128) {
+pub fn refund_invoice_partial(
+    env: &Env,
+    merchant_address: &Address,
+    invoice_id: u64,
+    amount: i128,
+) {
     merchant_address.require_auth();
     let mut invoice = get_invoice(env, invoice_id);
 

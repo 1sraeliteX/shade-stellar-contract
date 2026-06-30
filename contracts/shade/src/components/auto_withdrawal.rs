@@ -52,11 +52,7 @@ pub fn set_auto_withdrawal_threshold(
 }
 
 /// Get auto-withdrawal threshold for a merchant and token
-pub fn get_auto_withdrawal_threshold(
-    env: &Env,
-    merchant_id: u64,
-    token: &Address,
-) -> Option<i128> {
+pub fn get_auto_withdrawal_threshold(env: &Env, merchant_id: u64, token: &Address) -> Option<i128> {
     let merchant = merchant::get_merchant(env, merchant_id);
     for entry in merchant.auto_withdrawal_thresholds.iter() {
         if entry.token == *token {
@@ -67,11 +63,7 @@ pub fn get_auto_withdrawal_threshold(
 }
 
 /// Set auto-withdrawal recipient address for a merchant
-pub fn set_auto_withdrawal_recipient(
-    env: &Env,
-    merchant_address: &Address,
-    recipient: &Address,
-) {
+pub fn set_auto_withdrawal_recipient(env: &Env, merchant_address: &Address, recipient: &Address) {
     merchant_address.require_auth();
 
     let merchant_id = merchant::get_merchant_id(env, merchant_address);
@@ -99,11 +91,7 @@ fn save_merchant(env: &Env, merchant_id: u64, merchant: &Merchant) {
 }
 
 /// Check and trigger auto-withdrawal if balance exceeds threshold
-pub fn check_and_trigger_auto_withdrawal(
-    env: &Env,
-    merchant_id: u64,
-    token: &Address,
-) -> bool {
+pub fn check_and_trigger_auto_withdrawal(env: &Env, merchant_id: u64, token: &Address) -> bool {
     // Get threshold
     let threshold = match get_auto_withdrawal_threshold(env, merchant_id, token) {
         Some(t) => t,
@@ -127,11 +115,18 @@ pub fn check_and_trigger_auto_withdrawal(
 
     // Get recipient (default to merchant address if not set)
     let merchant = merchant::get_merchant(env, merchant_id);
-    let recipient = get_auto_withdrawal_recipient(env, merchant_id)
-        .unwrap_or_else(|| merchant.address.clone());
+    let recipient =
+        get_auto_withdrawal_recipient(env, merchant_id).unwrap_or_else(|| merchant.address.clone());
 
     // Trigger withdrawal
-    trigger_auto_withdrawal(env, merchant_id, token, &merchant_account, &recipient, balance);
+    trigger_auto_withdrawal(
+        env,
+        merchant_id,
+        token,
+        &merchant_account,
+        &recipient,
+        balance,
+    );
 
     true
 }

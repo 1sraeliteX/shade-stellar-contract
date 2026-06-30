@@ -1,10 +1,9 @@
 use crate::components::{
     access_control as access_control_component, admin as admin_component,
     auto_withdrawal as auto_withdrawal_component, bridge as bridge_component,
-    core as core_component, governance as governance_component, invoice as invoice_component,
-    merchant as merchant_component, pausable as pausable_component,
+    core as core_component, governance as governance_component, history as history_component,
+    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -317,7 +316,9 @@ impl ShadeTrait for Shade {
 
     fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128) {
         pausable_component::assert_not_paused(&env);
-        auto_withdrawal_component::set_auto_withdrawal_threshold(&env, &merchant, &token, threshold);
+        auto_withdrawal_component::set_auto_withdrawal_threshold(
+            &env, &merchant, &token, threshold,
+        );
     }
 
     fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
@@ -460,20 +461,11 @@ impl ShadeTrait for Shade {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction> {
         history_component::get_user_transactions(&env, user)
     }
-    
-    fn emit_bridge_placeholder(
-        env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    ) {
+
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload) {
         pausable_component::assert_not_paused(&env);
         caller.require_auth();
-        events::publish_bridge_placeholder_event(
-            &env,
-            caller,
-            payload,
-            env.ledger().timestamp(),
-        );
+        events::publish_bridge_placeholder_event(&env, caller, payload, env.ledger().timestamp());
     }
 
     // ── Bridge listener / external deposits ──────────────────────────────────

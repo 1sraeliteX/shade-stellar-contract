@@ -156,12 +156,7 @@ pub fn publish_event_created_event(
     .publish(env);
 }
 
-pub fn publish_event_cancelled_event(
-    env: &Env,
-    event_id: u64,
-    organizer: Address,
-    timestamp: u64,
-) {
+pub fn publish_event_cancelled_event(env: &Env, event_id: u64, organizer: Address, timestamp: u64) {
     EventCancelledEvent {
         event_id,
         organizer,
@@ -586,7 +581,8 @@ impl TicketingContract {
     pub fn cancel_event(env: Env, organizer: Address, event_id: u64) {
         organizer.require_auth();
 
-        let mut event: Event = env.storage()
+        let mut event: Event = env
+            .storage()
             .persistent()
             .get(&DataKey::Event(event_id))
             .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
@@ -605,12 +601,7 @@ impl TicketingContract {
             .persistent()
             .set(&DataKey::Event(event_id), &event);
 
-        publish_event_cancelled_event(
-            &env,
-            event_id,
-            organizer,
-            env.ledger().timestamp(),
-        );
+        publish_event_cancelled_event(&env, event_id, organizer, env.ledger().timestamp());
     }
 
     /// Issue a ticket for an event.

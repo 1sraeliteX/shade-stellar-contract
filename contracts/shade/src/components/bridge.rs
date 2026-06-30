@@ -46,9 +46,10 @@ pub fn register_bridge_listener(env: &Env, admin: &Address, listener: &Address) 
     env.storage()
         .persistent()
         .set(&DataKey::BridgeListener(listener.clone()), &true);
-    env.storage()
-        .persistent()
-        .set(&DataKey::BridgeListenerCount, &(get_listener_count(env) + 1));
+    env.storage().persistent().set(
+        &DataKey::BridgeListenerCount,
+        &(get_listener_count(env) + 1),
+    );
 
     events::publish_bridge_listener_registered_event(
         env,
@@ -120,9 +121,10 @@ pub fn record_bridge_deposit(
     }
 
     // Mark processed first so any re-entrant or concurrent retry is rejected.
-    env.storage()
-        .persistent()
-        .set(&DataKey::ProcessedBridgeDeposit(source_tx_id.clone()), &true);
+    env.storage().persistent().set(
+        &DataKey::ProcessedBridgeDeposit(source_tx_id.clone()),
+        &true,
+    );
 
     let deposit_id = get_deposit_count(env) + 1;
     env.storage()

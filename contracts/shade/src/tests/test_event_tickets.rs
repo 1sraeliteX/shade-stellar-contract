@@ -173,8 +173,7 @@ fn create_event_rejects_past_date() {
 #[test]
 fn purchase_ticket_transfers_funds_and_mints() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
     let buyer = Address::generate(&f.env);
     fund(&f.env, &f.token, &buyer, TOKEN_INITIAL_BALANCE);
 
@@ -217,8 +216,7 @@ fn purchase_ticket_transfers_funds_and_mints() {
 #[test]
 fn purchase_ticket_routes_fee_to_platform_when_configured() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
     // 10% platform fee on this token.
     f.client.set_fee(&f.admin, &f.token, &1_000i128);
 
@@ -241,7 +239,10 @@ fn purchase_ticket_routes_fee_to_platform_when_configured() {
     let token_client = TokenClient::new(&f.env, &f.token);
     let platform = f.client.get_platform_account();
     let expected_fee = price / 10; // 10% in bps == 1000
-    assert_eq!(token_client.balance(&merchant_account), price - expected_fee);
+    assert_eq!(
+        token_client.balance(&merchant_account),
+        price - expected_fee
+    );
     assert_eq!(token_client.balance(&platform), expected_fee);
 }
 
@@ -283,8 +284,7 @@ fn purchase_ticket_panics_when_event_missing() {
 #[test]
 fn resale_splits_royalty_and_proceeds() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
 
     let buyer1 = Address::generate(&f.env);
     let buyer2 = Address::generate(&f.env);

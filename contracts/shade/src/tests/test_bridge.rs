@@ -26,7 +26,12 @@ fn setup() -> BridgeCtx<'static> {
         .address();
     client.add_accepted_token(&admin, &token);
 
-    BridgeCtx { env, client, admin, token }
+    BridgeCtx {
+        env,
+        client,
+        admin,
+        token,
+    }
 }
 
 fn tx_hash(env: &Env, seed: u8) -> BytesN<32> {
@@ -114,10 +119,7 @@ fn test_registered_listener_records_deposit() {
     assert!(ctx
         .client
         .is_bridge_deposit_processed(&tx_hash(&ctx.env, 1)));
-    assert_eq!(
-        ctx.client.get_bridge_credit(&recipient, &ctx.token),
-        5_000
-    );
+    assert_eq!(ctx.client.get_bridge_credit(&recipient, &ctx.token), 5_000);
 }
 
 /// Credit totals accumulate across multiple distinct deposits to the same
@@ -131,18 +133,25 @@ fn test_credit_accumulates_across_deposits() {
 
     let chain = String::from_str(&ctx.env, "polygon");
     let id1 = ctx.client.record_bridge_deposit(
-        &listener, &chain, &tx_hash(&ctx.env, 1), &ctx.token, &1_000_i128, &recipient,
+        &listener,
+        &chain,
+        &tx_hash(&ctx.env, 1),
+        &ctx.token,
+        &1_000_i128,
+        &recipient,
     );
     let id2 = ctx.client.record_bridge_deposit(
-        &listener, &chain, &tx_hash(&ctx.env, 2), &ctx.token, &2_500_i128, &recipient,
+        &listener,
+        &chain,
+        &tx_hash(&ctx.env, 2),
+        &ctx.token,
+        &2_500_i128,
+        &recipient,
     );
 
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
-    assert_eq!(
-        ctx.client.get_bridge_credit(&recipient, &ctx.token),
-        3_500
-    );
+    assert_eq!(ctx.client.get_bridge_credit(&recipient, &ctx.token), 3_500);
 }
 
 /// The same origin-chain tx hash can never be credited twice (#55).
@@ -156,11 +165,23 @@ fn test_replay_is_rejected() {
 
     let chain = String::from_str(&ctx.env, "ethereum");
     let hash = tx_hash(&ctx.env, 7);
-    ctx.client
-        .record_bridge_deposit(&listener, &chain, &hash, &ctx.token, &1_000_i128, &recipient);
+    ctx.client.record_bridge_deposit(
+        &listener,
+        &chain,
+        &hash,
+        &ctx.token,
+        &1_000_i128,
+        &recipient,
+    );
     // Replay with the same source_tx_id.
-    ctx.client
-        .record_bridge_deposit(&listener, &chain, &hash, &ctx.token, &1_000_i128, &recipient);
+    ctx.client.record_bridge_deposit(
+        &listener,
+        &chain,
+        &hash,
+        &ctx.token,
+        &1_000_i128,
+        &recipient,
+    );
 }
 
 /// A caller that is not a registered listener cannot record deposits (#1).
@@ -248,5 +269,6 @@ fn test_get_unknown_deposit_returns_none() {
 
 fn env_token(env: &Env) -> Address {
     let token_admin = Address::generate(env);
-    env.register_stellar_asset_contract_v2(token_admin).address()
+    env.register_stellar_asset_contract_v2(token_admin)
+        .address()
 }
