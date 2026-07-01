@@ -1,18 +1,21 @@
-use crate::components::{
-    access_control as access_control_component, admin as admin_component,
-    auto_withdrawal as auto_withdrawal_component, bridge as bridge_component,
-    core as core_component, governance as governance_component, history as history_component,
+﻿use crate::components::{
+    nft as nft_component,
+    access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
+    history as history_component, escrow as escrow_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::shade_interface::ShadeTrait;
 use crate::types::{
-    BridgeDeposit, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter,
-    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
-    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
-    UpgradeProposal,
+    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, Escrow,
+    BackerCampaign, BackerRewardTier, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice,
+    InvoiceFilter, Merchant, Nft, NftCollection, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
