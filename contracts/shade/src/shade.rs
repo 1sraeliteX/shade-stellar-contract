@@ -3,12 +3,15 @@
     access_control as access_control_component, admin as admin_component, core as core_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component,
+    history as history_component, escrow as escrow_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::shade_interface::ShadeTrait;
 use crate::types::{
+    ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload,
+    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, Escrow,
     BackerCampaign, BackerRewardTier, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice,
     InvoiceFilter, Merchant, Nft, NftCollection, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
     OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
@@ -572,7 +575,38 @@ impl ShadeTrait for Shade {
     }
 
     fn get_token_market_share(env: Env, token: Address) -> i128 {
-        admin_component::get_token_market_share(&env, &token)
+        admin_component::get_token_market_share(&env, token)
+    }
+
+    fn create_escrow(
+        env: Env,
+        seller: Address,
+        buyer: Address,
+        token: Address,
+        amount: i128,
+        invoice_id: Option<u64>,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        escrow_component::create_escrow(&env, &seller, &buyer, &token, amount, invoice_id)
+    }
+
+    fn get_escrow(env: Env, escrow_id: u64) -> Escrow {
+        escrow_component::get_escrow(&env, escrow_id)
+    }
+
+    fn fund_escrow(env: Env, buyer: Address, escrow_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        escrow_component::fund_escrow(&env, &buyer, escrow_id)
+    }
+
+    fn release_escrow(env: Env, buyer: Address, escrow_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        escrow_component::release_escrow(&env, &buyer, escrow_id)
+    }
+
+    fn refund_escrow(env: Env, seller: Address, escrow_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        escrow_component::refund_escrow(&env, &seller, escrow_id)
     }
 
     // ── NFT minting & distribution ────────────────────────────────────────────

@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contractevent, Address, BytesN, Env, Option, String, Vec};
 
 // ── Existing events ───────────────────────────────────────────────────────────
 
@@ -1005,6 +1005,36 @@ pub fn publish_ticket_resold_event(
     .publish(env);
 }
 
+// ── Escrow system events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct EscrowCreatedEvent {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub buyer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub invoice_id: Option<u64>,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_created_event(
+    env: &Env,
+    escrow_id: u64,
+    seller: Address,
+    buyer: Address,
+    token: Address,
+    amount: i128,
+    invoice_id: Option<u64>,
+    timestamp: u64,
+) {
+    EscrowCreatedEvent {
+        escrow_id,
+        seller,
+        buyer,
+        token,
+        amount,
+        invoice_id,
 // ── Campaign fundraising events ─────────────────────────────────────────────
 
 #[contractevent]
@@ -1229,6 +1259,30 @@ pub fn publish_backer_reward_tiers_set_event(
 }
 
 #[contractevent]
+pub struct EscrowFundedEvent {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_funded_event(
+    env: &Env,
+    escrow_id: u64,
+    buyer: Address,
+    seller: Address,
+    token: Address,
+    amount: i128,
+    timestamp: u64,
+) {
+    EscrowFundedEvent {
+        escrow_id,
+        buyer,
+        seller,
+        token,
+        amount,
 pub struct CampaignStakedEvent {
     pub campaign_id: u64,
     pub participant: Address,
@@ -1279,6 +1333,33 @@ pub fn publish_backer_pledge_recorded_event(
 }
 
 #[contractevent]
+pub struct EscrowReleasedEvent {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub token: Address,
+    pub merchant_amount: i128,
+    pub fee: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_released_event(
+    env: &Env,
+    escrow_id: u64,
+    buyer: Address,
+    seller: Address,
+    token: Address,
+    merchant_amount: i128,
+    fee: i128,
+    timestamp: u64,
+) {
+    EscrowReleasedEvent {
+        escrow_id,
+        buyer,
+        seller,
+        token,
+        merchant_amount,
+        fee,
 pub struct CampaignSlashedEvent {
     pub campaign_id: u64,
     pub participant: Address,
@@ -1330,6 +1411,30 @@ pub fn publish_backer_reward_tier_selected_event(
 }
 
 #[contractevent]
+pub struct EscrowRefundedEvent {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub buyer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_escrow_refunded_event(
+    env: &Env,
+    escrow_id: u64,
+    seller: Address,
+    buyer: Address,
+    token: Address,
+    amount: i128,
+    timestamp: u64,
+) {
+    EscrowRefundedEvent {
+        escrow_id,
+        seller,
+        buyer,
+        token,
+        amount,
 pub struct AffiliateRegisteredEvent {
     pub campaign_id: u64,
     pub affiliate: Address,

@@ -1,9 +1,12 @@
 use crate::types::{
+    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, Escrow
     BackerCampaign, BackerPerk, BackerRewardTier, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant,
     MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, Nft, NftCollection, OracleConfig, PaymentPayload,
     PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
 };
-use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contracttrait, Address, BytesN, Env, Option, String, Vec};
 
 #[contracttrait]
 pub trait ShadeTrait {
@@ -235,6 +238,27 @@ pub trait ShadeTrait {
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
 
+    /// Create an escrow for physical goods
+    fn create_escrow(
+        env: Env,
+        seller: Address,
+        buyer: Address,
+        token: Address,
+        amount: i128,
+        invoice_id: Option<u64>,
+    ) -> u64;
+
+    /// Get an escrow by ID
+    fn get_escrow(env: Env, escrow_id: u64) -> Escrow;
+
+    /// Fund an escrow
+    fn fund_escrow(env: Env, buyer: Address, escrow_id: u64);
+
+    /// Release escrow to seller
+    fn release_escrow(env: Env, buyer: Address, escrow_id: u64);
+
+    /// Refund escrow to buyer (called by seller)
+    fn refund_escrow(env: Env, seller: Address, escrow_id: u64);
     // ── NFT minting & distribution ────────────────────────────────────────────
 
     /// Create a new NFT collection for crowdfunding rewards. Only the merchant can call this.
