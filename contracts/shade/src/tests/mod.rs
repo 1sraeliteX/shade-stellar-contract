@@ -1,4 +1,4 @@
-pub mod test;
+﻿pub mod test;
 pub mod test_accepted_tokens;
 pub mod test_access_control;
 pub mod test_account_factory;
@@ -42,3 +42,7 @@ pub mod test_upgrade;
 pub mod test_fiat_pricing;
 pub mod test_event_tickets;
 pub mod test_analytics_aggregation;
+pub mod test_campaign_leaderboard;
+
+pub mod test_nft_rewards;
+pub mod test_backer_rewards;

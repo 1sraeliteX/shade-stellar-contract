@@ -1035,6 +1035,224 @@ pub fn publish_escrow_created_event(
         token,
         amount,
         invoice_id,
+// ── Campaign fundraising events ─────────────────────────────────────────────
+
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub charity: bool,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    owner: Address,
+    name: String,
+    charity: bool,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        owner,
+        name,
+        charity,
+        fee_waiver_bps,
+        discount_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignFeePolicyConfiguredEvent {
+    pub campaign_id: u64,
+    pub caller: Address,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_fee_policy_configured_event(
+    env: &Env,
+    campaign_id: u64,
+    caller: Address,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+    timestamp: u64,
+) {
+    CampaignFeePolicyConfiguredEvent {
+        campaign_id,
+        caller,
+        fee_waiver_bps,
+        discount_bps,
+  }
+}
+// NFT reward system events
+pub struct NftCollectionCreatedEvent {
+    pub collection_id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub name: String,
+    pub base_uri: String,
+    pub max_supply: u64,
+    pub royalty_bps: u32,
+    pub timestamp: u64,
+}
+#[allow(clippy::too_many_arguments)]
+pub fn publish_nft_collection_created_event(
+    env: &Env, collection_id: u64, merchant_id: u64, merchant: Address,
+    name: String, base_uri: String, max_supply: u64, royalty_bps: u32, timestamp: u64,
+) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_col_c"),), (collection_id, merchant_id, merchant, name, base_uri, max_supply, royalty_bps, timestamp));
+}
+
+pub struct NftMintedEvent {
+    pub nft_id: u64,
+    pub collection_id: u64,
+    pub merchant_id: u64,
+    pub recipient: Address,
+    pub uri: String,
+    pub timestamp: u64,
+}
+pub fn publish_nft_minted_event(env: &Env, nft_id: u64, collection_id: u64, merchant_id: u64, recipient: Address, uri: String, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_mint"),), (nft_id, collection_id, merchant_id, recipient, uri, timestamp));
+}
+
+pub struct NftBatchMintedEvent {
+    pub collection_id: u64,
+    pub merchant_id: u64,
+    pub count: u32,
+    pub timestamp: u64,
+}
+pub fn publish_nft_batch_minted_event(env: &Env, collection_id: u64, merchant_id: u64, count: u32, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_batch"),), (collection_id, merchant_id, count, timestamp));
+}
+
+pub struct NftTransferredEvent {
+    pub nft_id: u64,
+    pub collection_id: u64,
+    pub from: Address,
+    pub to: Address,
+    pub timestamp: u64,
+}
+pub fn publish_nft_transferred_event(env: &Env, nft_id: u64, collection_id: u64, from: Address, to: Address, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_xfer"),), (nft_id, collection_id, from, to, timestamp));
+}
+
+pub struct NftBurnedEvent {
+    pub nft_id: u64,
+    pub collection_id: u64,
+    pub owner: Address,
+    pub timestamp: u64,
+}
+pub fn publish_nft_burned_event(env: &Env, nft_id: u64, collection_id: u64, owner: Address, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_burn"),), (nft_id, collection_id, owner, timestamp));
+}
+
+pub struct NftCollectionDeactivatedEvent {
+    pub collection_id: u64,
+    pub merchant: Address,
+    pub timestamp: u64,
+}
+pub fn publish_nft_collection_deactivated_event(env: &Env, collection_id: u64, merchant: Address, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_col_d"),), (collection_id, merchant, timestamp));
+}
+
+pub struct NftRewardClaimedEvent {
+    pub nft_id: u64,
+    pub collection_id: u64,
+    pub claimer: Address,
+    pub timestamp: u64,
+}
+pub fn publish_nft_reward_claimed_event(env: &Env, nft_id: u64, collection_id: u64, claimer: Address, timestamp: u64) {
+    env.events().publish((soroban_sdk::symbol_short!("nft_claim"),), (nft_id, collection_id, claimer, timestamp));
+}
+// ── Backer rewards (crowdfunding tiers & perks) ───────────────────────────────
+
+#[contractevent]
+pub struct BackerCampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub merchant_id: u64,
+    pub name: String,
+    pub token: Address,
+    pub deadline: u64,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_backer_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    merchant_id: u64,
+    name: String,
+    token: Address,
+    deadline: u64,
+    timestamp: u64,
+) {
+    BackerCampaignCreatedEvent {
+        campaign_id,
+        merchant,
+        merchant_id,
+        name,
+        token,
+        deadline,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignContributionRecordedEvent {
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub total_raised: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_contribution_recorded_event(
+    env: &Env,
+    campaign_id: u64,
+    contributor: Address,
+    amount: i128,
+    total_raised: i128,
+    timestamp: u64,
+) {
+    CampaignContributionRecordedEvent {
+        campaign_id,
+        contributor,
+        amount,
+        total_raised,
+  }
+}
+pub struct BackerRewardTiersSetEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub tier_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_tiers_set_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    tier_count: u32,
+    timestamp: u64,
+) {
+    BackerRewardTiersSetEvent {
+        campaign_id,
+        merchant,
+        tier_count,
         timestamp,
     }
     .publish(env);
@@ -1065,6 +1283,50 @@ pub fn publish_escrow_funded_event(
         seller,
         token,
         amount,
+pub struct CampaignStakedEvent {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub amount: i128,
+    pub total_staked: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_staked_event(
+    env: &Env,
+    campaign_id: u64,
+    participant: Address,
+    amount: i128,
+    total_staked: i128,
+    timestamp: u64,
+) {
+    CampaignStakedEvent {
+        campaign_id,
+        participant,
+        amount,
+        total_staked,
+  }
+}
+pub struct BackerPledgeRecordedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub amount: i128,
+    pub total_pledge: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_pledge_recorded_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    amount: i128,
+    total_pledge: i128,
+    timestamp: u64,
+) {
+    BackerPledgeRecordedEvent {
+        campaign_id,
+        backer,
+        amount,
+        total_pledge,
         timestamp,
     }
     .publish(env);
@@ -1098,6 +1360,51 @@ pub fn publish_escrow_released_event(
         token,
         merchant_amount,
         fee,
+pub struct CampaignSlashedEvent {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub amount: i128,
+    pub remaining_stake: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_slashed_event(
+    env: &Env,
+    campaign_id: u64,
+    participant: Address,
+    amount: i128,
+    remaining_stake: i128,
+    timestamp: u64,
+) {
+    CampaignSlashedEvent {
+        campaign_id,
+        participant,
+        amount,
+        remaining_stake,
+pub struct BackerRewardTierSelectedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub tier_index: u32,
+    pub min_pledge: i128,
+    pub perk_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_tier_selected_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    tier_index: u32,
+    min_pledge: i128,
+    perk_count: u32,
+    timestamp: u64,
+) {
+    BackerRewardTierSelectedEvent {
+        campaign_id,
+        backer,
+        tier_index,
+        min_pledge,
+        perk_count,
         timestamp,
     }
     .publish(env);
@@ -1128,6 +1435,99 @@ pub fn publish_escrow_refunded_event(
         buyer,
         token,
         amount,
+pub struct AffiliateRegisteredEvent {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub commission_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_affiliate_registered_event(
+    env: &Env,
+    campaign_id: u64,
+    affiliate: Address,
+    commission_bps: u32,
+    timestamp: u64,
+) {
+    AffiliateRegisteredEvent {
+        campaign_id,
+        affiliate,
+        commission_bps,
+pub struct BackerRewardFulfilledEvent {
+    pub campaign_id: u64,
+    pub merchant: Address,
+    pub backer: Address,
+    pub tier_index: Option<u32>,
+    pub pledge: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_reward_fulfilled_event(
+    env: &Env,
+    campaign_id: u64,
+    merchant: Address,
+    backer: Address,
+    tier_index: Option<u32>,
+    pledge: i128,
+    timestamp: u64,
+) {
+    BackerRewardFulfilledEvent {
+        campaign_id,
+        merchant,
+        backer,
+        tier_index,
+        pledge,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AffiliateCommissionPaidEvent {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub amount: i128,
+    pub total_paid: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_affiliate_commission_paid_event(
+    env: &Env,
+    campaign_id: u64,
+    affiliate: Address,
+    amount: i128,
+    total_paid: i128,
+    timestamp: u64,
+) {
+    AffiliateCommissionPaidEvent {
+        campaign_id,
+        affiliate,
+        amount,
+        total_paid,
+pub struct BackerPerkClaimedEvent {
+    pub campaign_id: u64,
+    pub backer: Address,
+    pub tier_index: u32,
+    pub perk_index: u32,
+    pub perk_name: String,
+    pub timestamp: u64,
+}
+
+pub fn publish_backer_perk_claimed_event(
+    env: &Env,
+    campaign_id: u64,
+    backer: Address,
+    tier_index: u32,
+    perk_index: u32,
+    perk_name: String,
+    timestamp: u64,
+) {
+    BackerPerkClaimedEvent {
+        campaign_id,
+        backer,
+        tier_index,
+        perk_index,
+        perk_name,
         timestamp,
     }
     .publish(env);
