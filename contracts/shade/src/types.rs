@@ -1,10 +1,8 @@
-use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Admin,
-    PendingAdmin,
-    Paused,
     FeeInBasisPoints(Address),
     FeeAmount(Address),
     ContractInfo,
@@ -47,6 +45,35 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Escrow system ---
+    Escrow(u64),
+    EscrowCount,
+    // --- Campaign fundraising engine ---
+    Campaign(u64),
+    CampaignCount,
+    CampaignParticipants(u64),
+    CampaignParticipant(u64, Address),
+    CampaignAffiliate(u64, Address),
+    // --- NFT reward system ---
+    NftCollection(u64),
+    NftCollectionCount,
+    Nft(u64),
+    NftCount,
+    CollectionNfts(u64),
+    UserNfts(Address),
+    NftClaimed(u64, Address),
+    // --- Auto-withdrawal ---
+    MerchantAutoWithdrawalThreshold(u64, Address),
+    MerchantAutoWithdrawalRecipient(u64),
+    // --- Backer rewards (crowdfunding tiers & perks) ---
+    BackerCampaign(u64),
+    BackerCampaignCount,
+    BackerRewardTiers(u64),
+    BackerPledge(u64, Address),
+    BackerSelectedTier(u64, Address),
+    BackerRewardFulfilled(u64, Address),
+    BackerPerkClaimed(u64, Address, u32),
+    BackerTierBackerCount(u64, u32),
 }
 
 #[contracttype]
@@ -299,6 +326,31 @@ pub enum EventStatus {
 }
 
 #[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowStatus {
+    Created = 0,
+    Funded = 1,
+    Released = 2,
+    Refunded = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Escrow {
+    pub id: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: EscrowStatus,
+    pub invoice_id: Option<u64>,
+    pub date_created: u64,
+    pub date_funded: Option<u64>,
+    pub date_released: Option<u64>,
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Event {
     pub id: u64,
@@ -357,4 +409,111 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// --- Campaign fundraising engine ---
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Campaign {
+    pub id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub charity: bool,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub stake_required: i128,
+    pub total_raised: i128,
+    pub total_staked: i128,
+    pub total_slashed: i128,
+    pub total_commissions_paid: i128,
+    pub active: bool,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignParticipant {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub contributed: i128,
+    pub staked: i128,
+    pub slashed: i128,
+    pub commissions_paid: i128,
+    pub score: i128,
+}
+// ── NFT reward system ─────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum NftStatus {
+    Active = 0,
+    Burned = 1,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NftCollection {
+    pub id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub name: String,
+    pub base_uri: String,
+    pub max_supply: u64,
+    pub minted: u64,
+    pub royalty_bps: u32,
+    pub active: bool,
+    pub created_at: u64,
+}
+// --- Backer rewards (crowdfunding tiers & perks) ---
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackerCampaign {
+    pub id: u64,
+    pub merchant_id: u64,
+    pub name: String,
+    pub token: Address,
+    pub deadline: u64,
+    pub raised: i128,
+    pub active: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignAffiliate {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub commission_bps: u32,
+    pub total_paid: i128,
+    pub active: bool,
+pub struct Nft {
+    pub id: u64,
+    pub collection_id: u64,
+    pub owner: Address,
+    pub uri: String,
+    pub status: NftStatus,
+    pub minted_at: u64,
+    pub recipient: Address,
+}
+pub struct BackerPerk {
+    pub name: String,
+    pub description: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+    pub recipient: Address,
+}
+pub struct BackerRewardTier {
+    pub min_pledge: i128,
+    pub name: String,
+    pub description: String,
+    pub perks: Vec<BackerPerk>,
+    /// Maximum backers at this tier. Zero means unlimited.
+    pub max_backers: u32,
 }
