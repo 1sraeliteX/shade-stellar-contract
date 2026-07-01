@@ -1,4 +1,4 @@
-pub mod access_control;
+﻿pub mod access_control;
 pub mod account_factory;
 pub mod admin;
 pub mod auto_withdrawal;
@@ -12,5 +12,7 @@ pub mod signature_util;
 pub mod subscription;
 pub mod history;
 pub mod upgrade;
+pub mod backer_rewards;
 pub mod event;
 pub mod campaign;
+pub mod nft;

@@ -1,17 +1,18 @@
-use crate::components::{
-    access_control as access_control_component, admin as admin_component, campaign as campaign_component,
-    core as core_component, invoice as invoice_component, merchant as merchant_component,
-    pausable as pausable_component, subscription as subscription_component,
-    upgrade as upgrade_component, history as history_component,
+﻿use crate::components::{
+    nft as nft_component,
+    access_control as access_control_component, admin as admin_component, core as core_component,
+    invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
+    subscription as subscription_component, upgrade as upgrade_component,
+    history as history_component,
 };
 use crate::errors::ContractError;
 use crate::events;
 use crate::shade_interface::ShadeTrait;
 use crate::types::{
-    Campaign, CampaignAffiliate, CampaignParticipant, ContractInfo, CrossChainBridgePayload,
-    DataKey, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
-    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
-    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction,
+    BackerCampaign, BackerRewardTier, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice,
+    InvoiceFilter, Merchant, Nft, NftCollection, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
+    OracleConfig, PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket,
+    TokenAnalytics, Transaction,
 };
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
 
@@ -574,104 +575,164 @@ impl ShadeTrait for Shade {
         admin_component::get_token_market_share(&env, &token)
     }
 
-    fn create_campaign(
+    // ── NFT minting & distribution ────────────────────────────────────────────
+
+    fn create_nft_collection(
         env: Env,
-        caller: Address,
+        merchant: Address,
         name: String,
-        charity: bool,
-        fee_waiver_bps: u32,
-        discount_bps: u32,
-        stake_required: i128,
+        base_uri: String,
+        max_supply: u64,
+        royalty_bps: u32,
     ) -> u64 {
         pausable_component::assert_not_paused(&env);
-        campaign_component::create_campaign(
-            &env,
-            &caller,
-            &name,
-            charity,
-            fee_waiver_bps,
-            discount_bps,
-            stake_required,
+        nft_component::create_nft_collection(&env, &merchant, &name, &base_uri, max_supply, royalty_bps)
+    }
+
+    fn mint_nft(
+        env: Env,
+        merchant: Address,
+        collection_id: u64,
+        recipient: Address,
+        token_uri: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        nft_component::mint_nft(&env, &merchant, collection_id, &recipient, &token_uri)
+    }
+
+    fn batch_mint_nfts(
+        env: Env,
+        merchant: Address,
+        collection_id: u64,
+        recipients: Vec<Address>,
+        token_uris: Vec<String>,
+    ) -> Vec<u64> {
+        pausable_component::assert_not_paused(&env);
+        nft_component::batch_mint_nfts(&env, &merchant, collection_id, &recipients, &token_uris)
+    }
+
+    fn transfer_nft(env: Env, from: Address, to: Address, nft_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        nft_component::transfer_nft(&env, &from, &to, nft_id)
+    }
+
+    fn burn_nft(env: Env, owner: Address, nft_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        nft_component::burn_nft(&env, &owner, nft_id)
+    }
+
+    fn claim_nft_reward(env: Env, claimer: Address, nft_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        nft_component::claim_nft_reward(&env, &claimer, nft_id)
+    }
+
+    fn deactivate_nft_collection(env: Env, merchant: Address, collection_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        nft_component::deactivate_nft_collection(&env, &merchant, collection_id)
+    }
+
+    fn get_nft_collection(env: Env, collection_id: u64) -> NftCollection {
+        nft_component::get_nft_collection(&env, collection_id)
+    }
+
+    fn get_nft(env: Env, nft_id: u64) -> Nft {
+        nft_component::get_nft(&env, nft_id)
+    }
+
+    fn get_collection_nfts(env: Env, collection_id: u64) -> Vec<u64> {
+        nft_component::get_collection_nfts(&env, collection_id)
+    }
+
+    fn get_user_nfts(env: Env, user: Address) -> Vec<u64> {
+        nft_component::get_user_nfts(&env, &user)
+    }
+    fn create_backer_campaign(
+        env: Env,
+        merchant: Address,
+        name: String,
+        token: Address,
+        deadline: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        crate::components::backer_rewards::create_backer_campaign(
+            &env, merchant, name, token, deadline,
         )
     }
 
-    fn configure_campaign_fee_policy(
+    fn get_backer_campaign(env: Env, campaign_id: u64) -> BackerCampaign {
+        crate::components::backer_rewards::get_backer_campaign(&env, campaign_id)
+    }
+
+    fn set_backer_reward_tiers(
         env: Env,
-        caller: Address,
+        merchant: Address,
         campaign_id: u64,
-        fee_waiver_bps: u32,
-        discount_bps: u32,
+        tiers: Vec<BackerRewardTier>,
     ) {
         pausable_component::assert_not_paused(&env);
-        campaign_component::configure_campaign_fee_policy(
-            &env,
-            &caller,
-            campaign_id,
-            fee_waiver_bps,
-            discount_bps,
+        crate::components::backer_rewards::set_backer_reward_tiers(
+            &env, merchant, campaign_id, tiers,
         );
     }
 
-    fn calculate_campaign_discounted_amount(env: Env, campaign_id: u64, amount: i128) -> i128 {
-        campaign_component::calculate_campaign_discounted_amount(&env, campaign_id, amount)
+    fn get_backer_reward_tiers(env: Env, campaign_id: u64) -> Vec<BackerRewardTier> {
+        crate::components::backer_rewards::get_backer_reward_tiers(&env, campaign_id)
     }
 
-    fn record_campaign_contribution(env: Env, caller: Address, campaign_id: u64, amount: i128) {
+    fn pledge_to_campaign(env: Env, backer: Address, campaign_id: u64, amount: i128) {
         pausable_component::assert_not_paused(&env);
-        campaign_component::record_campaign_contribution(&env, &caller, campaign_id, amount);
+        crate::components::backer_rewards::pledge_to_campaign(&env, backer, campaign_id, amount);
     }
 
-    fn stake_campaign(env: Env, caller: Address, campaign_id: u64, amount: i128) {
-        pausable_component::assert_not_paused(&env);
-        campaign_component::stake_campaign(&env, &caller, campaign_id, amount);
+    fn get_backer_pledge(env: Env, campaign_id: u64, backer: Address) -> i128 {
+        crate::components::backer_rewards::get_backer_pledge(&env, campaign_id, backer)
     }
 
-    fn slash_campaign_stake(
+    fn select_backer_reward_tier(
         env: Env,
-        caller: Address,
+        backer: Address,
         campaign_id: u64,
-        participant: Address,
-        amount: i128,
+        tier_index: u32,
     ) {
         pausable_component::assert_not_paused(&env);
-        campaign_component::slash_campaign_stake(&env, &caller, campaign_id, &participant, amount);
+        crate::components::backer_rewards::select_backer_reward_tier(
+            &env, backer, campaign_id, tier_index,
+        );
     }
 
-    fn register_affiliate(
+    fn get_backer_selected_tier(env: Env, campaign_id: u64, backer: Address) -> Option<u32> {
+        crate::components::backer_rewards::get_backer_selected_tier(&env, campaign_id, backer)
+    }
+
+    fn fulfill_backer_reward(
         env: Env,
-        caller: Address,
+        merchant: Address,
         campaign_id: u64,
-        affiliate: Address,
-        commission_bps: u32,
+        backer: Address,
     ) {
         pausable_component::assert_not_paused(&env);
-        campaign_component::register_affiliate(&env, &caller, campaign_id, &affiliate, commission_bps);
+        crate::components::backer_rewards::fulfill_backer_reward(
+            &env, merchant, campaign_id, backer,
+        );
     }
 
-    fn pay_affiliate_commission(
-        env: Env,
-        caller: Address,
-        campaign_id: u64,
-        affiliate: Address,
-        amount: i128,
-    ) {
+    fn is_backer_reward_fulfilled(env: Env, campaign_id: u64, backer: Address) -> bool {
+        crate::components::backer_rewards::is_backer_reward_fulfilled(&env, campaign_id, backer)
+    }
+
+    fn claim_backer_perk(env: Env, backer: Address, campaign_id: u64, perk_index: u32) {
         pausable_component::assert_not_paused(&env);
-        campaign_component::pay_affiliate_commission(&env, &caller, campaign_id, &affiliate, amount);
+        crate::components::backer_rewards::claim_backer_perk(&env, backer, campaign_id, perk_index);
     }
 
-    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
-        campaign_component::get_campaign(&env, campaign_id)
-    }
-
-    fn get_campaign_participant(env: Env, campaign_id: u64, participant: Address) -> CampaignParticipant {
-        campaign_component::get_campaign_participant(&env, campaign_id, &participant)
-    }
-
-    fn get_campaign_affiliate(env: Env, campaign_id: u64, affiliate: Address) -> CampaignAffiliate {
-        campaign_component::get_campaign_affiliate(&env, campaign_id, &affiliate)
-    }
-
-    fn get_campaign_leaderboard(env: Env, campaign_id: u64, limit: u32) -> Vec<(Address, i128)> {
-        campaign_component::get_campaign_leaderboard(&env, campaign_id, limit)
+    fn is_backer_perk_claimed(
+        env: Env,
+        campaign_id: u64,
+        backer: Address,
+        perk_index: u32,
+    ) -> bool {
+        crate::components::backer_rewards::is_backer_perk_claimed(
+            &env, campaign_id, backer, perk_index,
+        )
     }
 }
