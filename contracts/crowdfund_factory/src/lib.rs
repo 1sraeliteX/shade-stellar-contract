@@ -8,8 +8,8 @@ mod tests;
 
 use crate::errors::FactoryError;
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Bytes,
-    BytesN, Env, IntoVal, String, Symbol, Vec,
+    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN,
+    Env, IntoVal, Symbol, Vec,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2,11 +2,7 @@
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger as _};
-use soroban_sdk::{Address, BytesN, Env, String};
-
-mod crowdfund_wasm {
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/crowdfund.wasm");
-}
+use soroban_sdk::{Address, BytesN, Env};
 
 fn register_campaign_ref(
     env: &Env,

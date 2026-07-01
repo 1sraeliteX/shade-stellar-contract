@@ -52,26 +52,12 @@ pub enum CrowdfundError {
     InsufficientMatchingPool = 26,
     // Pledge comment exceeds the configured maximum length.
     CommentTooLong = 27,
-    // Guardians have not been configured for this campaign (#366).
-    GuardiansNotSet = 28,
-    // Caller is not a configured guardian.
-    NotGuardian = 29,
-    // Threshold must be > 0 and <= guardian count.
-    InvalidThreshold = 30,
-    // Guardian list contains a duplicate address.
-    DuplicateGuardian = 31,
-    // A recovery is already pending; cancel or let it execute first.
-    RecoveryAlreadyPending = 32,
-    // No recovery is currently pending.
-    NoPendingRecovery = 33,
-    // This guardian has already approved the pending recovery.
-    AlreadyApprovedRecovery = 34,
-    // Commission must be > 0 and <= 10 000 bps (100 %).
-    InvalidCommissionBps = 35,
-    // Address is already a registered affiliate.
-    AffiliateAlreadyRegistered = 36,
-    // Address is not a registered affiliate.
-    AffiliateNotRegistered = 37,
-    // Affiliate has no accrued commission to claim.
-    NoCommissionOwed = 38,
+    // Caller is not authorized for this privileged view (organizer only).
+    NotAuthorized = 28,
+    // The backer already holds this badge.
+    BadgeAlreadyAwarded = 29,
+    // The backer does not meet this badge's on-chain eligibility rules.
+    BadgeNotEligible = 30,
+    // Badge eligibility thresholds have not been configured by the organizer.
+    BadgeConfigNotSet = 31,
 }

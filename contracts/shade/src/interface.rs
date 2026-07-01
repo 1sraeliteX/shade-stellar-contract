@@ -98,6 +98,11 @@ pub trait ShadeTrait {
     fn get_merchant_analytics_summary(env: Env, merchant: Address) -> MerchantAnalyticsSummary;
     fn set_merchant_account(env: Env, merchant: Address, account: Address);
     fn get_merchant_account(env: Env, merchant_id: u64) -> Address;
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128);
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128>;
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address);
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address>;
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
     fn pay_invoices_batch(env: Env, payer: Address, invoice_ids: Vec<u64>);
     fn pay_invoice_partial(env: Env, payer: Address, invoice_id: u64, amount: i128);
@@ -168,11 +173,75 @@ pub trait ShadeTrait {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction>;
 
     // ── Cross-chain bridge placeholder ───────────────────────────────────────
-    fn emit_bridge_placeholder(
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload);
+
+    // ── Bridge listener / external deposits ──────────────────────────────────
+
+    /// Register an authorized bridge listener (relayer). Admin only.
+    fn register_bridge_listener(env: Env, admin: Address, listener: Address);
+
+    /// Revoke a bridge listener's authorization. Admin only.
+    fn remove_bridge_listener(env: Env, admin: Address, listener: Address);
+
+    /// Whether `listener` is a currently registered bridge listener.
+    fn is_bridge_listener(env: Env, listener: Address) -> bool;
+
+    /// Record a confirmed external-chain deposit. Callable only by a registered
+    /// bridge listener. De-duplicated on `source_tx_id`. Returns the deposit id.
+    fn record_bridge_deposit(
         env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    );
+        listener: Address,
+        source_chain: String,
+        source_tx_id: BytesN<32>,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> u64;
+
+    /// Fetch a recorded external deposit by id, or `None` if it does not exist.
+    fn get_bridge_deposit(env: Env, deposit_id: u64) -> Option<BridgeDeposit>;
+
+    /// Whether an origin-chain transaction hash has already been credited.
+    fn is_bridge_deposit_processed(env: Env, source_tx_id: BytesN<32>) -> bool;
+
+    /// Total number of external deposits recorded so far.
+    fn get_bridge_deposit_count(env: Env) -> u64;
+
+    /// Cumulative amount credited to `recipient` for `token` via the bridge.
+    fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128;
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    /// Register a governance council member. Admin only; idempotent.
+    fn add_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Revoke a governance council member. Admin only; idempotent.
+    fn remove_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Whether `member` is a current governance council member.
+    fn is_gov_member(env: Env, member: Address) -> bool;
+
+    /// Number of governance council members.
+    fn get_gov_member_count(env: Env) -> u32;
+
+    /// Configure the voting window (seconds) and approval quorum (bps). Admin only.
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32);
+
+    /// Open an upgrade proposal for the given WASM hash. Member only. Returns id.
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64;
+
+    /// Cast a vote on an active proposal within its window. Member only.
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool);
+
+    /// Finalize a proposal after voting closes: apply the upgrade if it passed,
+    /// otherwise mark it defeated. Member only.
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64);
+
+    /// Fetch an upgrade proposal by id, or `None` if it does not exist.
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal>;
+
+    /// Whether `member` has already voted on the given proposal.
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool;
 
     // --- Event ticketing system ---
     #[allow(clippy::too_many_arguments)]
@@ -197,13 +266,7 @@ pub trait ShadeTrait {
     );
     fn get_current_ticket_price(env: Env, event_id: u64) -> i128;
     fn cancel_event_and_batch_refund(env: Env, merchant: Address, event_id: u64);
-    fn resell_ticket(
-        env: Env,
-        seller: Address,
-        buyer: Address,
-        ticket_id: u64,
-        resale_price: i128,
-    );
+    fn resell_ticket(env: Env, seller: Address, buyer: Address, ticket_id: u64, resale_price: i128);
     fn get_event(env: Env, event_id: u64) -> Event;
     fn get_ticket(env: Env, ticket_id: u64) -> Ticket;
     fn get_event_tickets(env: Env, event_id: u64) -> Vec<u64>;

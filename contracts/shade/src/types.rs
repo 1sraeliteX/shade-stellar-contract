@@ -45,35 +45,39 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
-    // --- Escrow system ---
-    Escrow(u64),
-    EscrowCount,
-    // --- Campaign fundraising engine ---
-    Campaign(u64),
-    CampaignCount,
-    CampaignParticipants(u64),
-    CampaignParticipant(u64, Address),
-    CampaignAffiliate(u64, Address),
-    // --- NFT reward system ---
-    NftCollection(u64),
-    NftCollectionCount,
-    Nft(u64),
-    NftCount,
-    CollectionNfts(u64),
-    UserNfts(Address),
-    NftClaimed(u64, Address),
-    // --- Auto-withdrawal ---
-    MerchantAutoWithdrawalThreshold(u64, Address),
-    MerchantAutoWithdrawalRecipient(u64),
-    // --- Backer rewards (crowdfunding tiers & perks) ---
-    BackerCampaign(u64),
-    BackerCampaignCount,
-    BackerRewardTiers(u64),
-    BackerPledge(u64, Address),
-    BackerSelectedTier(u64, Address),
-    BackerRewardFulfilled(u64, Address),
-    BackerPerkClaimed(u64, Address, u32),
-    BackerTierBackerCount(u64, u32),
+    // --- Bridge listener / external deposits ---
+    /// Allowlist flag for an authorized bridge listener (relayer) address.
+    BridgeListener(Address),
+    /// Number of currently registered bridge listeners.
+    BridgeListenerCount,
+    /// Persisted external-deposit record keyed by sequential id.
+    BridgeDeposit(u64),
+    /// Monotonic counter of recorded external deposits.
+    BridgeDepositCount,
+    /// Replay-protection flag keyed by the source-chain transaction hash.
+    ProcessedBridgeDeposit(BytesN<32>),
+    /// Cumulative amount credited to a recipient per token via the bridge.
+    BridgeCredit(Address, Address),
+    // --- DAO governance for protocol upgrades ---
+    /// Singleton governance state: voting params + member/proposal counters.
+    /// Bundled into one key to stay within the `#[contracttype]` 50-case cap
+    /// and to minimize the number of distinct storage entries.
+    GovState,
+    /// Allowlist flag for a governance council member.
+    GovMember(Address),
+    /// Persisted upgrade proposal keyed by sequential id.
+    GovProposal(u64),
+    /// Records a member's vote on a proposal (presence ⇒ voted).
+    GovVote(u64, Address),
+}
+
+/// A single per-token auto-withdrawal threshold. Stored inside [`Merchant`] so
+/// no extra `DataKey` variants are consumed (the enum is at its 50-case cap).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub token: Address,
+    pub threshold: i128,
 }
 
 #[contracttype]
@@ -93,6 +97,11 @@ pub struct Merchant {
     pub date_registered: u64,
     pub account: Address,
     pub webhook: String,
+    /// Optional recipient for auto-withdrawals. Defaults to the merchant
+    /// address when unset.
+    pub auto_withdrawal_recipient: Option<Address>,
+    /// Per-token auto-withdrawal thresholds.
+    pub auto_withdrawal_thresholds: Vec<AutoWithdrawalThreshold>,
 }
 
 #[contracttype]
@@ -229,6 +238,23 @@ pub struct CrossChainBridgePayload {
     pub amount: i128,
     pub destination_recipient: String,
     pub memo: Option<String>,
+}
+
+/// A confirmed external-chain deposit recorded by an authorized bridge listener.
+///
+/// The `source_tx_id` is the 32-byte transaction hash on the origin chain and
+/// doubles as the global idempotency key (see `DataKey::ProcessedBridgeDeposit`).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BridgeDeposit {
+    pub id: u64,
+    pub source_chain: String,
+    pub source_tx_id: BytesN<32>,
+    pub listener: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
 }
 
 // ── Time-locked fee update ────────────────────────────────────────────────────
@@ -411,109 +437,42 @@ pub struct PaymentPayload {
     pub max_slippage_bps: Option<u32>,
 }
 
-// --- Campaign fundraising engine ---
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Campaign {
-    pub id: u64,
-    pub owner: Address,
-    pub name: String,
-    pub charity: bool,
-    pub fee_waiver_bps: u32,
-    pub discount_bps: u32,
-    pub stake_required: i128,
-    pub total_raised: i128,
-    pub total_staked: i128,
-    pub total_slashed: i128,
-    pub total_commissions_paid: i128,
-    pub active: bool,
-    pub created_at: u64,
-}
+// ── DAO governance for protocol upgrades ──────────────────────────────────────
 
+/// Singleton governance configuration and counters. `voting_period == 0` is the
+/// sentinel for "not yet configured".
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CampaignParticipant {
-    pub campaign_id: u64,
-    pub participant: Address,
-    pub contributed: i128,
-    pub staked: i128,
-    pub slashed: i128,
-    pub commissions_paid: i128,
-    pub score: i128,
+pub struct GovState {
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub member_count: u32,
+    pub proposal_count: u64,
 }
-// ── NFT reward system ─────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
-pub enum NftStatus {
+pub enum ProposalStatus {
+    /// Open for voting.
     Active = 0,
-    Burned = 1,
+    /// Passed quorum + majority and the upgrade was applied.
+    Executed = 1,
+    /// Failed quorum or majority after the voting window closed.
+    Defeated = 2,
 }
 
+/// A council-governed proposal to upgrade the contract's WASM to `wasm_hash`.
+/// Voting is one-member-one-vote; `approvals`/`rejections` are head counts.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NftCollection {
+pub struct UpgradeProposal {
     pub id: u64,
-    pub merchant_id: u64,
-    pub merchant: Address,
-    pub name: String,
-    pub base_uri: String,
-    pub max_supply: u64,
-    pub minted: u64,
-    pub royalty_bps: u32,
-    pub active: bool,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
     pub created_at: u64,
-}
-// --- Backer rewards (crowdfunding tiers & perks) ---
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BackerCampaign {
-    pub id: u64,
-    pub merchant_id: u64,
-    pub name: String,
-    pub token: Address,
-    pub deadline: u64,
-    pub raised: i128,
-    pub active: bool,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CampaignAffiliate {
-    pub campaign_id: u64,
-    pub affiliate: Address,
-    pub commission_bps: u32,
-    pub total_paid: i128,
-    pub active: bool,
-pub struct Nft {
-    pub id: u64,
-    pub collection_id: u64,
-    pub owner: Address,
-    pub uri: String,
-    pub status: NftStatus,
-    pub minted_at: u64,
-    pub recipient: Address,
-}
-pub struct BackerPerk {
-    pub name: String,
-    pub description: String,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AutoWithdrawalThreshold {
-    pub merchant_id: u64,
-    pub token: Address,
-    pub threshold: i128,
-    pub recipient: Address,
-}
-pub struct BackerRewardTier {
-    pub min_pledge: i128,
-    pub name: String,
-    pub description: String,
-    pub perks: Vec<BackerPerk>,
-    /// Maximum backers at this tier. Zero means unlimited.
-    pub max_backers: u32,
+    pub voting_ends_at: u64,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub status: ProposalStatus,
 }

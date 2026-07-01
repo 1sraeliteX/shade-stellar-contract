@@ -317,6 +317,31 @@ impl ShadeTrait for Shade {
         merchant_component::get_merchant_account(&env, merchant_id)
     }
 
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_threshold(
+            &env, &merchant, &token, threshold,
+        );
+    }
+
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        auto_withdrawal_component::get_auto_withdrawal_threshold(&env, merchant_id, &token)
+    }
+
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_recipient(&env, &merchant, &recipient);
+    }
+
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address> {
+        auto_withdrawal_component::get_auto_withdrawal_recipient(&env, merchant_id)
+    }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
+
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64) {
         pausable_component::assert_not_paused(&env);
         invoice_component::pay_invoice(&env, &payer, invoice_id);
@@ -439,20 +464,112 @@ impl ShadeTrait for Shade {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction> {
         history_component::get_user_transactions(&env, user)
     }
-    
-    fn emit_bridge_placeholder(
-        env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    ) {
+
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload) {
         pausable_component::assert_not_paused(&env);
         caller.require_auth();
-        events::publish_bridge_placeholder_event(
+        events::publish_bridge_placeholder_event(&env, caller, payload, env.ledger().timestamp());
+    }
+
+    // ── Bridge listener / external deposits ──────────────────────────────────
+
+    fn register_bridge_listener(env: Env, admin: Address, listener: Address) {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::register_bridge_listener(&env, &admin, &listener);
+    }
+
+    fn remove_bridge_listener(env: Env, admin: Address, listener: Address) {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::remove_bridge_listener(&env, &admin, &listener);
+    }
+
+    fn is_bridge_listener(env: Env, listener: Address) -> bool {
+        bridge_component::is_bridge_listener(&env, &listener)
+    }
+
+    fn record_bridge_deposit(
+        env: Env,
+        listener: Address,
+        source_chain: String,
+        source_tx_id: BytesN<32>,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::record_bridge_deposit(
             &env,
-            caller,
-            payload,
-            env.ledger().timestamp(),
-        );
+            &listener,
+            source_chain,
+            source_tx_id,
+            token,
+            amount,
+            recipient,
+        )
+    }
+
+    fn get_bridge_deposit(env: Env, deposit_id: u64) -> Option<BridgeDeposit> {
+        bridge_component::get_bridge_deposit(&env, deposit_id)
+    }
+
+    fn is_bridge_deposit_processed(env: Env, source_tx_id: BytesN<32>) -> bool {
+        bridge_component::is_bridge_deposit_processed(&env, &source_tx_id)
+    }
+
+    fn get_bridge_deposit_count(env: Env) -> u64 {
+        bridge_component::get_bridge_deposit_count(&env)
+    }
+
+    fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128 {
+        bridge_component::get_bridge_credit(&env, &recipient, &token)
+    }
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    fn add_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::add_gov_member(&env, &admin, &member);
+    }
+
+    fn remove_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::remove_gov_member(&env, &admin, &member);
+    }
+
+    fn is_gov_member(env: Env, member: Address) -> bool {
+        governance_component::is_gov_member(&env, &member)
+    }
+
+    fn get_gov_member_count(env: Env) -> u32 {
+        governance_component::get_gov_member_count(&env)
+    }
+
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::set_governance_config(&env, &admin, voting_period, quorum_bps);
+    }
+
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        governance_component::propose_upgrade(&env, &proposer, wasm_hash)
+    }
+
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::vote_on_upgrade(&env, &voter, proposal_id, approve);
+    }
+
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::finalize_upgrade(&env, &caller, proposal_id);
+    }
+
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal> {
+        governance_component::get_upgrade_proposal(&env, proposal_id)
+    }
+
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool {
+        governance_component::has_voted(&env, proposal_id, &member)
     }
 
     // --- Event ticketing system ---
@@ -768,5 +885,216 @@ impl ShadeTrait for Shade {
         crate::components::backer_rewards::is_backer_perk_claimed(
             &env, campaign_id, backer, perk_index,
         )
+    }
+
+    fn create_vesting_timeline(
+        env: Env,
+        admin: Address,
+        name: String,
+        cliff_duration: u64,
+        vesting_duration: u64,
+        unlock_percentage: i128,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::create_vesting_timeline(
+            &env,
+            admin,
+            name,
+            cliff_duration,
+            vesting_duration,
+            unlock_percentage,
+        )
+    }
+
+    fn get_vesting_timeline(env: Env, timeline_id: u64) -> VestingTimeline {
+        vesting_component::get_vesting_timeline(&env, timeline_id)
+    }
+
+    fn update_vesting_timeline(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        cliff_duration: u64,
+        vesting_duration: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::update_vesting_timeline(
+            &env,
+            admin,
+            timeline_id,
+            cliff_duration,
+            vesting_duration,
+        )
+    }
+
+    fn configure_crowdfund_vesting(
+        env: Env,
+        admin: Address,
+        crowdfund_id: u64,
+        timeline_id: u64,
+        total_vesting_amount: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::configure_crowdfund_vesting(&env, admin, crowdfund_id, timeline_id, total_vesting_amount)
+    }
+
+    fn get_crowdfund_vesting_config(env: Env, crowdfund_id: u64) -> CrowdfundVestingConfig {
+        vesting_component::get_crowdfund_vesting_config(&env, crowdfund_id)
+    }
+
+    fn add_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+        unlock_amount: i128,
+        unlock_timestamp: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::add_vesting_schedule(
+            &env,
+            admin,
+            timeline_id,
+            tranche_index,
+            unlock_amount,
+            unlock_timestamp,
+        )
+    }
+
+    fn release_vesting_schedule(
+        env: Env,
+        admin: Address,
+        timeline_id: u64,
+        tranche_index: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        vesting_component::release_vesting_schedule(&env, admin, timeline_id, tranche_index)
+    }
+
+    fn create_comment(
+        env: Env,
+        author: Address,
+        crowdfund_id: u64,
+        content: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        comments_component::create_comment(&env, author, crowdfund_id, content)
+    }
+
+    fn get_comment(env: Env, comment_id: u64) -> BackerComment {
+        comments_component::get_comment(&env, comment_id)
+    }
+
+    fn flag_comment(env: Env, flagger: Address, comment_id: u64, reason: String) {
+        pausable_component::assert_not_paused(&env);
+        comments_component::flag_comment(&env, flagger, comment_id, reason)
+    }
+
+    fn remove_comment(env: Env, moderator: Address, comment_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        comments_component::remove_comment(&env, moderator, comment_id)
+    }
+
+    fn approve_flagged_comment(env: Env, moderator: Address, comment_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        comments_component::approve_flagged_comment(&env, moderator, comment_id)
+    }
+
+    fn get_crowdfund_comments(env: Env, crowdfund_id: u64) -> Vec<u64> {
+        comments_component::get_crowdfund_comments(&env, crowdfund_id)
+    }
+
+    fn get_user_comments(env: Env, user: Address) -> Vec<u64> {
+        comments_component::get_user_comments(&env, user)
+    }
+
+    fn initiate_hard_cap_voting(
+        env: Env,
+        crowdfund_id: u64,
+        proposed_cap: i128,
+        voting_duration: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::initiate_hard_cap_voting(&env, crowdfund_id, proposed_cap, voting_duration)
+    }
+
+    fn get_hard_cap_voting(env: Env, crowdfund_id: u64) -> HardCapVoting {
+        voting_component::get_hard_cap_voting(&env, crowdfund_id)
+    }
+
+    fn vote_on_hard_cap(env: Env, voter: Address, crowdfund_id: u64, support: bool) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::vote_on_hard_cap(&env, voter, crowdfund_id, support)
+    }
+
+    fn finalize_hard_cap_voting(env: Env, admin: Address, crowdfund_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        voting_component::finalize_hard_cap_voting(&env, admin, crowdfund_id)
+    }
+
+    fn get_dynamic_hard_cap(env: Env, crowdfund_id: u64) -> DynamicHardCapConfig {
+        voting_component::get_dynamic_hard_cap(&env, crowdfund_id)
+    }
+
+    fn get_crowdfund_hard_cap(env: Env, crowdfund_id: u64) -> i128 {
+        voting_component::get_crowdfund_hard_cap(&env, crowdfund_id)
+    }
+
+    fn create_stretch_goal(
+        env: Env,
+        merchant: Address,
+        crowdfund_id: u64,
+        target_amount: i128,
+        description: String,
+        reward_description: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::create_stretch_goal(
+            &env,
+            merchant,
+            crowdfund_id,
+            target_amount,
+            description,
+            reward_description,
+        )
+    }
+
+    fn get_stretch_goal(env: Env, goal_id: u64) -> StretchGoal {
+        stretch_goals_component::get_stretch_goal(&env, goal_id)
+    }
+
+    fn unlock_stretch_goal(env: Env, admin: Address, goal_id: u64, current_amount: i128) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::unlock_stretch_goal(&env, admin, goal_id, current_amount)
+    }
+
+    fn distribute_stretch_goal_reward(
+        env: Env,
+        admin: Address,
+        goal_id: u64,
+        backer: Address,
+        reward_amount: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::distribute_stretch_goal_reward(
+            &env,
+            admin,
+            goal_id,
+            backer,
+            reward_amount,
+        )
+    }
+
+    fn claim_stretch_goal_reward(env: Env, backer: Address, goal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        stretch_goals_component::claim_stretch_goal_reward(&env, backer, goal_id)
+    }
+
+    fn get_crowdfund_stretch_goals(env: Env, crowdfund_id: u64) -> Vec<u64> {
+        stretch_goals_component::get_crowdfund_stretch_goals(&env, crowdfund_id)
+    }
+
+    fn get_stretch_goal_reward(env: Env, goal_id: u64) -> StretchGoalReward {
+        stretch_goals_component::get_stretch_goal_reward(&env, goal_id)
     }
 }

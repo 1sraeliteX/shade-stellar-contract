@@ -29,7 +29,6 @@ fn setup_failed_campaign(
 ) -> (RefundFixture<'static>, Address, u64) {
     let env = Env::default();
     env.mock_all_auths();
-    env.budget().reset_unlimited();
     env.ledger().with_mut(|l| l.timestamp = 1_000_000);
 
     let contract = env.register(CrowdfundContract, ());
@@ -139,9 +138,9 @@ fn test_claim_refund_happy_path_transfers_and_zeros_pledge() {
     let before = token_client.balance(&contributor);
     f.client.claim_refund(&contributor);
 
-    assert_refund_claimed_event(&f.env, &f.contract, &contributor, 2_500);
     assert_eq!(token_client.balance(&contributor) - before, 2_500);
     assert_eq!(f.client.pledge_of(&contributor), 0);
+    assert_refund_claimed_event(&f.env, &f.contract, &contributor, 2_500);
 }
 
 #[test]
@@ -158,11 +157,11 @@ fn test_batch_refund_happy_path_refunds_all_contributors() {
 
     f.client.batch_refund();
 
-    assert_batch_refund_processed_event(&f.env, &f.contract, 5_000, 2);
     assert_eq!(token_client.balance(&contributor1) - before1, 3_000);
     assert_eq!(token_client.balance(&contributor2) - before2, 2_000);
     assert_eq!(f.client.pledge_of(&contributor1), 0);
     assert_eq!(f.client.pledge_of(&contributor2), 0);
+    assert_batch_refund_processed_event(&f.env, &f.contract, 5_000, 2);
 }
 
 #[test]
@@ -359,9 +358,9 @@ fn test_mixed_individual_then_batch_refunds_remaining_contributors() {
 
     let before2 = token_client.balance(&contributor2);
     f.client.batch_refund();
-    assert_batch_refund_processed_event(&f.env, &f.contract, 3_000, 2);
     assert_eq!(token_client.balance(&contributor2) - before2, 3_000);
     assert_eq!(f.client.pledge_of(&contributor2), 0);
+    assert_batch_refund_processed_event(&f.env, &f.contract, 3_000, 2);
 }
 
 #[test]
@@ -378,8 +377,8 @@ fn test_batch_refund_skips_zero_pledge_contributors_in_total() {
     let token_client = StellarAssetClient::new(&f.env, &f.token);
     let before1 = token_client.balance(&contributor1);
     f.client.batch_refund();
-    assert_batch_refund_processed_event(&f.env, &f.contract, 1_000, 2);
     assert_eq!(token_client.balance(&contributor1) - before1, 1_000);
+    assert_batch_refund_processed_event(&f.env, &f.contract, 1_000, 2);
 }
 
 #[test]
@@ -387,8 +386,8 @@ fn test_batch_refund_with_matching_pool_pledge_amounts() {
     let (f, contributor, deadline) = setup_failed_campaign(10_000, 100);
     let sponsor = Address::generate(&f.env);
     let token_client = StellarAssetClient::new(&f.env, &f.token);
-    token_client.mint(&sponsor, &300);
-    token_client.mint(&contributor, &500);
+    token_client.mint(&sponsor, 300);
+    token_client.mint(&contributor, 500);
     f.client.fund_matching_pool(&sponsor, &300);
     f.client.contribute(&contributor, &500);
     // Pledge includes 300 matched: 800 total per contributor accounting.
@@ -397,8 +396,8 @@ fn test_batch_refund_with_matching_pool_pledge_amounts() {
 
     let before = token_client.balance(&contributor);
     f.client.batch_refund();
-    assert_batch_refund_processed_event(&f.env, &f.contract, 800, 1);
     assert_eq!(token_client.balance(&contributor) - before, 800);
+    assert_batch_refund_processed_event(&f.env, &f.contract, 800, 1);
 }
 
 #[test]

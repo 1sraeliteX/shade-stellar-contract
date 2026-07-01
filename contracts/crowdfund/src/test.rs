@@ -1,5 +1,5 @@
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{vec, Address, Env, Vec};
 
@@ -999,212 +999,361 @@ fn test_leave_comment_requires_existing_pledge() {
     client.leave_comment(&contributor, &comment);
 }
 
-// ── Social recovery (#366) ──────────────────────────────────────────────────
+// ── Deep campaign statistics (read-only views) ───────────────────────────────
 
-fn setup_guardians(
-    env: &Env,
-    client: &CrowdfundContractClient<'static>,
-    organizer: &Address,
-    count: u32,
-    threshold: u32,
-) -> Vec<Address> {
-    let mut guardians = Vec::new(env);
-    for _ in 0..count {
-        guardians.push_back(Address::generate(env));
+#[test]
+fn test_campaign_stats_aggregate_metrics() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let contributor2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &3_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor2, &5_000);
+    client.contribute(&contributor, &3_000);
+    client.contribute(&contributor2, &5_000);
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.goal, 10_000);
+    assert_eq!(stats.raised, 8_000);
+    assert_eq!(stats.total_matched, 0);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.contributor_count, 2);
+    assert_eq!(stats.average_pledge, 4_000);
+    assert_eq!(stats.largest_pledge, 5_000);
+    assert_eq!(stats.largest_backer, Some(contributor2));
+    assert_eq!(stats.percent_funded_bps, 8_000); // 80%
+    assert_eq!(stats.deadline, deadline);
+    assert!(stats.seconds_remaining > 0);
+    assert!(!stats.is_ended);
+    assert!(!stats.goal_reached);
+    assert!(!stats.executed);
+}
+
+#[test]
+fn test_campaign_stats_reflects_matching_pool() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let sponsor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&sponsor, &1_000);
+    client.fund_matching_pool(&sponsor, &1_000);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_000);
+    client.contribute(&contributor, &2_000);
+
+    // 2_000 pledge fully matched by the 1_000 pool → effective 3_000.
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.raised, 3_000);
+    assert_eq!(stats.total_matched, 1_000);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.largest_pledge, 3_000);
+}
+
+#[test]
+fn test_campaign_stats_overfunded_and_ended() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 100;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_500);
+    client.contribute(&contributor, &2_500);
+
+    env.ledger().with_mut(|l| l.timestamp += 200); // past deadline
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.percent_funded_bps, 25_000); // 250%
+    assert!(stats.goal_reached);
+    assert!(stats.is_ended);
+    assert_eq!(stats.seconds_remaining, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_campaign_stats_before_init_panics() {
+    let (_env, _contract, client, _token, _organizer, _contributor) = setup();
+    client.get_campaign_stats();
+}
+
+#[test]
+fn test_backer_leaderboard_sorted_and_limited() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &100_000, &deadline);
+
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &9_000);
+    StellarAssetClient::new(&env, &token).mint(&c3, &4_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &9_000);
+    client.contribute(&c3, &4_000);
+
+    // Top 2 backers, descending by pledge.
+    let top = client.get_backer_leaderboard(&organizer, &2);
+    assert_eq!(top.len(), 2);
+    assert_eq!(top.get(0).unwrap(), (c2, 9_000));
+    assert_eq!(top.get(1).unwrap(), (c3, 4_000));
+
+    // A larger limit returns all backers without panicking.
+    let all = client.get_backer_leaderboard(&organizer, &10);
+    assert_eq!(all.len(), 3);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_backer_leaderboard_rejects_non_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    let stranger = Address::generate(&env);
+    client.get_backer_leaderboard(&stranger, &5);
+}
+
+#[test]
+fn test_snapshot_returns_stats_and_emits_event() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &6_000);
+    client.contribute(&contributor, &6_000);
+
+    let stats = client.snapshot_campaign_stats(&organizer);
+    assert_eq!(stats.raised, 6_000);
+    assert_eq!(stats.percent_funded_bps, 6_000);
+    // The snapshot publishes a detailed event for off-chain indexing.
+    assert!(!env.events().all().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_snapshot_rejects_non_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+
+    let stranger = Address::generate(&env);
+    let _ = contributor;
+    client.snapshot_campaign_stats(&stranger);
+}
+
+// ── Gamification: badges & achievements ──────────────────────────────────────
+
+fn setup_funded_campaign(
+    goal: i128,
+) -> (
+    Env,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &goal, &deadline);
+    (env, client, token, organizer, contributor)
+}
+
+#[test]
+fn test_first_backer_badge_awarded_and_queryable() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
+
+    // First contributor self-claims the FirstBacker badge.
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+    assert_eq!(client.badge_count(&contributor), 1);
+    assert!(client
+        .badge_awarded_at(&contributor, &BadgeKind::FirstBacker)
+        .is_some());
+    assert_eq!(
+        client.get_backer_badges(&contributor),
+        vec![&env, BadgeKind::FirstBacker]
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_first_backer_badge_rejects_non_first() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
+    let _ = organizer;
+
+    // c2 is not the first backer.
+    client.award_badge(&c2, &c2, &BadgeKind::FirstBacker);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #29)")]
+fn test_badge_cannot_be_awarded_twice() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_award_badge_rejects_third_party() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    // A stranger (neither the backer nor organizer) cannot award.
+    let stranger = Address::generate(&env);
+    client.award_badge(&stranger, &contributor, &BadgeKind::FirstBacker);
+}
+
+#[test]
+fn test_organizer_can_award_on_behalf_of_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
+
+    client.award_badge(&organizer, &contributor, &BadgeKind::FirstBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_non_backer_is_ineligible() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    // An address that never pledged cannot earn any badge.
+    let outsider = Address::generate(&env);
+    client.award_badge(&organizer, &outsider, &BadgeKind::FirstBacker);
+}
+
+#[test]
+fn test_whale_badge_requires_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    assert!(client.has_badge(&contributor, &BadgeKind::Whale));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_whale_badge_rejects_below_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_whale_badge_requires_config() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000);
+    let _ = env;
+
+    // No set_badge_config call → threshold unset.
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+}
+
+#[test]
+fn test_early_backer_badge_respects_limit() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
     }
-    client.set_guardians(organizer, &guardians, &threshold);
-    guardians
+
+    // First two contributors qualify; the third does not.
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&contributor, &contributor, &BadgeKind::EarlyBacker);
+    client.award_badge(&c2, &c2, &BadgeKind::EarlyBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::EarlyBacker));
+    assert!(client.has_badge(&c2, &BadgeKind::EarlyBacker));
 }
 
 #[test]
-fn test_set_guardians_stores_threshold() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_early_backer_badge_rejects_late_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
+    }
 
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    assert_eq!(client.get_guardians(), guardians);
-    assert_eq!(client.get_guardian_threshold(), 2);
-    assert!(client.is_guardian(&guardians.get(0).unwrap()));
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&c3, &c3, &BadgeKind::EarlyBacker); // index 2, limit 2 → ineligible
 }
 
 #[test]
-#[should_panic]
-fn test_set_guardians_zero_threshold_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    setup_guardians(&env, &client, &organizer, 3, 0);
+fn test_goal_getter_badge_after_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(1_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised == goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    assert!(client.has_badge(&contributor, &BadgeKind::GoalGetter));
 }
 
 #[test]
-#[should_panic]
-fn test_set_guardians_threshold_above_count_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    setup_guardians(&env, &client, &organizer, 2, 3);
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_goal_getter_badge_before_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(10_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised < goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
 }
 
 #[test]
-#[should_panic]
-fn test_set_guardians_duplicate_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-
-    let guardian = Address::generate(&env);
-    let guardians = vec![&env, guardian.clone(), guardian];
-    client.set_guardians(&organizer, &guardians, &1);
-}
-
-#[test]
-#[should_panic]
-fn test_non_organizer_cannot_set_guardians() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-
-    let not_organizer = Address::generate(&env);
-    let guardians = vec![&env, Address::generate(&env)];
-    client.set_guardians(&not_organizer, &guardians, &1);
-}
-
-#[test]
-fn test_initiate_and_approve_recovery_executes_at_threshold() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
-
-    assert_eq!(client.get_pending_recovery(), Some(new_organizer.clone()));
-    assert_eq!(client.get_recovery_approval_count(), 1);
-    // Still the old organizer until threshold is reached.
-    assert_eq!(client.organizer(), organizer);
-
-    client.approve_recovery(&guardians.get(1).unwrap());
-
-    assert_eq!(client.organizer(), new_organizer);
-    assert_eq!(client.get_pending_recovery(), None);
-    assert_eq!(client.get_recovery_approval_count(), 0);
-}
-
-#[test]
-#[should_panic]
-fn test_non_guardian_cannot_initiate_recovery() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    setup_guardians(&env, &client, &organizer, 3, 2);
-
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_set_badge_config_rejects_non_organizer() {
+    let (env, client, _token, _organizer, _contributor) = setup_funded_campaign(10_000);
     let stranger = Address::generate(&env);
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&stranger, &new_organizer);
+    client.set_badge_config(&stranger, &1_000, &5);
 }
 
 #[test]
-#[should_panic]
-fn test_initiate_recovery_without_guardians_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
+fn test_multiple_badges_accumulate() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
+    client.contribute(&contributor, &5_000); // first backer, whale-sized, goal reached
 
-    let stranger = Address::generate(&env);
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&stranger, &new_organizer);
-}
+    client.set_badge_config(&organizer, &5_000, &5);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    // The award publishes a detailed event (checked on the latest invocation).
+    assert!(!env.events().all().is_empty());
 
-#[test]
-#[should_panic]
-fn test_double_initiate_recovery_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    let new_organizer_a = Address::generate(&env);
-    let new_organizer_b = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer_a);
-    client.initiate_recovery(&guardians.get(1).unwrap(), &new_organizer_b);
-}
-
-#[test]
-#[should_panic]
-fn test_guardian_cannot_approve_twice() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 3);
-
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
-    client.approve_recovery(&guardians.get(0).unwrap());
-}
-
-#[test]
-#[should_panic]
-fn test_approve_recovery_without_pending_panics() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    client.approve_recovery(&guardians.get(0).unwrap());
-}
-
-#[test]
-fn test_organizer_can_cancel_pending_recovery() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
-    client.cancel_recovery(&organizer);
-
-    assert_eq!(client.get_pending_recovery(), None);
-    assert_eq!(client.organizer(), organizer);
-
-    // Guardian can re-initiate after cancellation.
-    client.initiate_recovery(&guardians.get(1).unwrap(), &new_organizer);
-    assert_eq!(client.get_pending_recovery(), Some(new_organizer));
-}
-
-#[test]
-#[should_panic]
-fn test_non_organizer_cannot_cancel_recovery() {
-    let (env, _contract, client, token, organizer, _) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 2);
-
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
-
-    let stranger = Address::generate(&env);
-    client.cancel_recovery(&stranger);
-}
-
-#[test]
-fn test_recovered_organizer_can_execute_campaign() {
-    let (env, _contract, client, token, organizer, _contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &2_000, &deadline);
-    let guardians = setup_guardians(&env, &client, &organizer, 3, 1);
-
-    StellarAssetClient::new(&env, &token).mint(&organizer, &2_000);
-    client.contribute(&organizer, &2_000);
-
-    let new_organizer = Address::generate(&env);
-    client.initiate_recovery(&guardians.get(0).unwrap(), &new_organizer);
-
-    env.ledger().with_mut(|l| l.timestamp = deadline + 1);
-    client.execute_campaign();
-
-    assert_eq!(client.organizer(), new_organizer);
+    assert_eq!(client.badge_count(&contributor), 3);
+    assert_eq!(client.get_backer_badges(&contributor).len(), 3);
 }

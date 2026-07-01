@@ -6,8 +6,8 @@ mod test;
 
 use crate::errors::FactoryError;
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contracttype, panic_with_error,
-    Address, Bytes, BytesN, Env, Vec,
+    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN,
+    Env, Vec,
 };
 
 // ── Data Structures ────────────────────────────────────────────────────────────
