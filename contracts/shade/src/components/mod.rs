@@ -14,4 +14,5 @@ pub mod history;
 pub mod upgrade;
 pub mod backer_rewards;
 pub mod event;
+pub mod campaign;
 pub mod nft;

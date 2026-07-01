@@ -1005,6 +1005,66 @@ pub fn publish_ticket_resold_event(
     .publish(env);
 }
 
+// ── Campaign fundraising events ─────────────────────────────────────────────
+
+#[contractevent]
+pub struct CampaignCreatedEvent {
+    pub campaign_id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub charity: bool,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_campaign_created_event(
+    env: &Env,
+    campaign_id: u64,
+    owner: Address,
+    name: String,
+    charity: bool,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+    timestamp: u64,
+) {
+    CampaignCreatedEvent {
+        campaign_id,
+        owner,
+        name,
+        charity,
+        fee_waiver_bps,
+        discount_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct CampaignFeePolicyConfiguredEvent {
+    pub campaign_id: u64,
+    pub caller: Address,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_fee_policy_configured_event(
+    env: &Env,
+    campaign_id: u64,
+    caller: Address,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+    timestamp: u64,
+) {
+    CampaignFeePolicyConfiguredEvent {
+        campaign_id,
+        caller,
+        fee_waiver_bps,
+        discount_bps,
+  }
+}
 // NFT reward system events
 pub struct NftCollectionCreatedEvent {
     pub collection_id: u64,
@@ -1122,6 +1182,29 @@ pub fn publish_backer_campaign_created_event(
 }
 
 #[contractevent]
+pub struct CampaignContributionRecordedEvent {
+    pub campaign_id: u64,
+    pub contributor: Address,
+    pub amount: i128,
+    pub total_raised: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_contribution_recorded_event(
+    env: &Env,
+    campaign_id: u64,
+    contributor: Address,
+    amount: i128,
+    total_raised: i128,
+    timestamp: u64,
+) {
+    CampaignContributionRecordedEvent {
+        campaign_id,
+        contributor,
+        amount,
+        total_raised,
+  }
+}
 pub struct BackerRewardTiersSetEvent {
     pub campaign_id: u64,
     pub merchant: Address,
@@ -1146,6 +1229,29 @@ pub fn publish_backer_reward_tiers_set_event(
 }
 
 #[contractevent]
+pub struct CampaignStakedEvent {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub amount: i128,
+    pub total_staked: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_staked_event(
+    env: &Env,
+    campaign_id: u64,
+    participant: Address,
+    amount: i128,
+    total_staked: i128,
+    timestamp: u64,
+) {
+    CampaignStakedEvent {
+        campaign_id,
+        participant,
+        amount,
+        total_staked,
+  }
+}
 pub struct BackerPledgeRecordedEvent {
     pub campaign_id: u64,
     pub backer: Address,
@@ -1173,6 +1279,27 @@ pub fn publish_backer_pledge_recorded_event(
 }
 
 #[contractevent]
+pub struct CampaignSlashedEvent {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub amount: i128,
+    pub remaining_stake: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_campaign_slashed_event(
+    env: &Env,
+    campaign_id: u64,
+    participant: Address,
+    amount: i128,
+    remaining_stake: i128,
+    timestamp: u64,
+) {
+    CampaignSlashedEvent {
+        campaign_id,
+        participant,
+        amount,
+        remaining_stake,
 pub struct BackerRewardTierSelectedEvent {
     pub campaign_id: u64,
     pub backer: Address,
@@ -1203,6 +1330,24 @@ pub fn publish_backer_reward_tier_selected_event(
 }
 
 #[contractevent]
+pub struct AffiliateRegisteredEvent {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub commission_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_affiliate_registered_event(
+    env: &Env,
+    campaign_id: u64,
+    affiliate: Address,
+    commission_bps: u32,
+    timestamp: u64,
+) {
+    AffiliateRegisteredEvent {
+        campaign_id,
+        affiliate,
+        commission_bps,
 pub struct BackerRewardFulfilledEvent {
     pub campaign_id: u64,
     pub merchant: Address,
@@ -1233,6 +1378,27 @@ pub fn publish_backer_reward_fulfilled_event(
 }
 
 #[contractevent]
+pub struct AffiliateCommissionPaidEvent {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub amount: i128,
+    pub total_paid: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_affiliate_commission_paid_event(
+    env: &Env,
+    campaign_id: u64,
+    affiliate: Address,
+    amount: i128,
+    total_paid: i128,
+    timestamp: u64,
+) {
+    AffiliateCommissionPaidEvent {
+        campaign_id,
+        affiliate,
+        amount,
+        total_paid,
 pub struct BackerPerkClaimedEvent {
     pub campaign_id: u64,
     pub backer: Address,

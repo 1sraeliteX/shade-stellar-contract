@@ -7,7 +7,7 @@
 };
 use crate::errors::ContractError;
 use crate::events;
-use crate::interface::ShadeTrait;
+use crate::shade_interface::ShadeTrait;
 use crate::types::{
     BackerCampaign, BackerRewardTier, ContractInfo, CrossChainBridgePayload, DataKey, Event, Invoice,
     InvoiceFilter, Merchant, Nft, NftCollection, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter,
