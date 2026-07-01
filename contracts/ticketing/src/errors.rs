@@ -21,4 +21,8 @@ pub enum TicketingError {
     InvalidResalePrice = 15,
     ResaleNotConfigured = 16,
     SameHolder = 17,
+    EventCancelled = 18,
+    TicketAlreadyRefunded = 19,
+    NotAtCapacity = 20,
+    AlreadyOnWaitlist = 21,
 }

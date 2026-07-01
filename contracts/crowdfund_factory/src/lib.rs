@@ -6,8 +6,8 @@ mod test;
 
 use crate::errors::FactoryError;
 use soroban_sdk::{
-    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Bytes,
-    BytesN, Env, IntoVal, Symbol, Vec,
+    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN,
+    Env, IntoVal, Symbol, Vec,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,7 +89,10 @@ impl CrowdfundFactory {
             .crypto()
             .keccak256(&Bytes::from_slice(&env, &random.to_array()));
 
-        let campaign_addr = env.deployer().with_current_contract(salt).deploy_v2(wasm_hash, ());
+        let campaign_addr = env
+            .deployer()
+            .with_current_contract(salt)
+            .deploy_v2(wasm_hash, ());
         env.invoke_contract::<()>(
             &campaign_addr,
             &Symbol::new(&env, "init_campaign"),
