@@ -54,7 +54,25 @@ pub enum ContractError {
     TicketEventMismatch = 53,
     InvalidResalePrice = 54,
     /// An external deposit with this origin-chain tx hash was already credited.
-    BridgeDepositProcessed = 55,
+    EscrowNotFound = 55,
+    InvalidEscrowStatus = 56,
+    CampaignNotFound = 55,
+    AffiliateNotFound = 56,
+    NftError = 55,
+    CampaignNotFound = 55,
+    InvalidRewardTier = 56,
+    PledgeBelowTierMinimum = 57,
+    RewardTierAtCapacity = 58,
+    BackerRewardAlreadyFulfilled = 59,
+    NotBacker = 60,
+    CampaignEnded = 61,
+    InvalidCampaignDeadline = 62,
+    PerkNotFound = 63,
+    PerkAlreadyClaimed = 64,
+    BackerRewardNotFulfilled = 65,
+    InvalidTierOrdering = 66,
+    CampaignNotActive = 67,
+  BridgeDepositProcessed = 68,
 }
 
 /// DAO governance errors. Kept in a separate enum (codes offset to 100+) so the
@@ -94,4 +112,5 @@ pub enum EscrowError {
     EscrowNotExpired = 44,
     /// The escrow invoice has already been fully refunded.
     EscrowAlreadyRefunded = 45,
+    
 }

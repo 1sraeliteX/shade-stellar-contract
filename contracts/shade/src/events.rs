@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contractevent, Address, BytesN, Env, Option, String, Vec};
 
 // ── Existing events ───────────────────────────────────────────────────────────
 
