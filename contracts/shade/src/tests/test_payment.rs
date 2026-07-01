@@ -27,6 +27,10 @@ fn setup_test_with_payment() -> (Env, ShadeClient<'static>, Address, Address, Ad
     // Set fee to 500 bps (5%)
     shade_client.set_fee(&admin, &token.address(), &500);
 
+    // Route platform fees to the contract itself so the fee-balance assertions
+    // in this file can read them off `shade_contract_id`.
+    shade_client.set_platform_account(&admin, &shade_contract_id);
+
     (env, shade_client, shade_contract_id, admin, token.address())
 }
 
@@ -45,10 +49,27 @@ fn assert_latest_paid_event(
     let events = env.events().all();
     assert!(!events.is_empty(), "No events captured for payment");
 
-    let (event_contract_id, _topics, data) = events.get(events.len() - 1).unwrap();
-    assert_eq!(&event_contract_id, contract_id);
-
-    let data_map: Map<Symbol, Val> = data.try_into_val(env).unwrap();
+    // The payment flow emits several events (InvoicePaid, PaymentSplitRouted, a
+    // transaction-history event, …). Locate the InvoicePaid event by its unique
+    // combination of `merchant_id` + `payer` fields rather than assuming it is
+    // the last event emitted.
+    let mut data_map: Option<Map<Symbol, Val>> = None;
+    for i in (0..events.len()).rev() {
+        let (event_contract_id, _topics, data) = events.get(i).unwrap();
+        if &event_contract_id != contract_id {
+            continue;
+        }
+        let map: Result<Map<Symbol, Val>, _> = data.try_into_val(env);
+        if let Ok(map) = map {
+            if map.contains_key(Symbol::new(env, "merchant_id"))
+                && map.contains_key(Symbol::new(env, "payer"))
+            {
+                data_map = Some(map);
+                break;
+            }
+        }
+    }
+    let data_map = data_map.expect("InvoicePaid event not found");
 
     let invoice_id_val = data_map.get(Symbol::new(env, "invoice_id")).unwrap();
     let merchant_id_val = data_map.get(Symbol::new(env, "merchant_id")).unwrap();

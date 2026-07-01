@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::shade::{Shade, ShadeClient};
-use crate::types::{OracleConfig, InvoicePricingMode};
+use crate::types::{InvoicePricingMode, OracleConfig};
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use soroban_sdk::{contract, contractimpl, Address, Env, String};
 
@@ -11,7 +11,10 @@ pub struct MockOracle;
 #[contractimpl]
 impl MockOracle {
     pub fn get_price(env: Env, _token: Address, _quote_currency: String) -> i128 {
-        env.storage().instance().get(&"price").unwrap_or(100_000_000) // Default $1.00 if decimals=8
+        env.storage()
+            .instance()
+            .get(&"price")
+            .unwrap_or(100_000_000) // Default $1.00 if decimals=8
     }
 
     pub fn set_price(env: Env, price: i128) {
@@ -43,7 +46,7 @@ fn test_fiat_invoice_creation_and_resolution() {
 
     let oracle_id = env.register(MockOracle, ());
     let oracle_client = MockOracleClient::new(&env, &oracle_id);
-    
+
     // Set price to $2.00 (200,000,000 with 8 decimals)
     let initial_price = 200_000_000;
     oracle_client.set_price(&initial_price);
@@ -75,7 +78,7 @@ fn test_fiat_invoice_creation_and_resolution() {
 
     let invoice = client.get_invoice(&invoice_id);
     assert_eq!(invoice.pricing_mode, InvoicePricingMode::FixedFiat);
-    
+
     // Expected crypto amount:
     // (fiat_amount * 10^token_decimals * 10^price_decimals) / (price * 10^fiat_decimals)
     // (1000 * 10^7 * 10^8) / (200,000,000 * 10^2)
@@ -89,14 +92,17 @@ fn test_fiat_invoice_creation_and_resolution() {
 
     // Update price to $5.00
     oracle_client.set_price(&500_000_000);
-    
+
     // New expected amount: 10^18 / (5 * 10^10) = 0.2 * 10^8 = 2 * 10^7
     let new_expected_amount = 20_000_000;
-    assert_eq!(client.resolve_invoice_amount(&invoice_id), new_expected_amount);
+    assert_eq!(
+        client.resolve_invoice_amount(&invoice_id),
+        new_expected_amount
+    );
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #18)")]
+#[should_panic(expected = "HostError: Error(Contract, #34)")] // OracleNotConfigured
 fn test_fiat_invoice_fails_without_oracle() {
     let (env, client, _shade_id, admin) = setup_test();
     let token = create_test_token(&env);
@@ -117,7 +123,7 @@ fn test_fiat_invoice_fails_without_oracle() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #18)")]
+#[should_panic(expected = "HostError: Error(Contract, #35)")] // OraclePriceUnavailable
 fn test_fiat_invoice_fails_with_invalid_price() {
     let (env, client, _shade_id, admin) = setup_test();
     let token = create_test_token(&env);

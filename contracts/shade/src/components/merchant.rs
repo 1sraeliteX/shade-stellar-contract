@@ -38,6 +38,8 @@ pub fn register_merchant(env: &Env, merchant: &Address) {
         date_registered: env.ledger().timestamp(),
         account: merchant.clone(),
         webhook: String::from_str(env, ""),
+        auto_withdrawal_recipient: None,
+        auto_withdrawal_thresholds: Vec::new(env),
     };
 
     env.storage()

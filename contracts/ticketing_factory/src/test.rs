@@ -101,7 +101,12 @@ fn test_get_event_ref_after_registration() {
     let organizer = Address::generate(&env);
     let ticketing_contract = Address::generate(&env);
 
-    let stored = register_event_ref(&env, &factory_id, organizer.clone(), ticketing_contract.clone());
+    let stored = register_event_ref(
+        &env,
+        &factory_id,
+        organizer.clone(),
+        ticketing_contract.clone(),
+    );
     let factory_client = TicketingFactoryClient::new(&env, &factory_id);
 
     let fetched = factory_client.get_event_ref(&stored.ref_id);
@@ -122,10 +127,20 @@ fn test_get_event_ref_count() {
     assert_eq!(factory_client.get_event_ref_count(), 0);
 
     let organizer = Address::generate(&env);
-    register_event_ref(&env, &factory_id, organizer.clone(), Address::generate(&env));
+    register_event_ref(
+        &env,
+        &factory_id,
+        organizer.clone(),
+        Address::generate(&env),
+    );
     assert_eq!(factory_client.get_event_ref_count(), 1);
 
-    register_event_ref(&env, &factory_id, organizer.clone(), Address::generate(&env));
+    register_event_ref(
+        &env,
+        &factory_id,
+        organizer.clone(),
+        Address::generate(&env),
+    );
     assert_eq!(factory_client.get_event_ref_count(), 2);
 }
 
@@ -154,9 +169,15 @@ fn test_get_all_event_refs_returns_all() {
     let mut found_c2 = false;
     let mut found_c3 = false;
     for r in all.iter() {
-        if r.contract == c1 { found_c1 = true; }
-        if r.contract == c2 { found_c2 = true; }
-        if r.contract == c3 { found_c3 = true; }
+        if r.contract == c1 {
+            found_c1 = true;
+        }
+        if r.contract == c2 {
+            found_c2 = true;
+        }
+        if r.contract == c3 {
+            found_c3 = true;
+        }
     }
     assert!(found_c1);
     assert!(found_c2);
@@ -218,8 +239,8 @@ fn test_factory_and_ticketing_contract_lifecycle() {
     let qr_hash = soroban_sdk::BytesN::from_array(&env, &qr_bytes);
     let ticket_id = ticketing_client.issue_ticket(&organizer, &event_id, &holder, &qr_hash);
 
-    let operator = Address::generate(&env);
-    ticketing_client.check_in(&operator, &ticket_id);
+    // Only the event organizer may check tickets in.
+    ticketing_client.check_in(&organizer, &ticket_id);
 
     let ticket = ticketing_client.get_ticket(&ticket_id);
     assert!(ticket.checked_in);

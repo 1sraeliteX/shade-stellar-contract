@@ -3,7 +3,9 @@
 mod errors;
 
 use crate::errors::EscrowError;
-use soroban_sdk::{contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Env};
+use soroban_sdk::{
+    contract, contractevent, contractimpl, contracttype, panic_with_error, Address, Env,
+};
 
 #[derive(Clone)]
 #[contracttype]
@@ -84,7 +86,9 @@ impl EscrowContract {
         env.storage()
             .instance()
             .set(&DataKey::RequiredAmount, &required_amount);
-        env.storage().instance().set(&DataKey::DepositedAmount, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::DepositedAmount, &0i128);
         env.storage()
             .instance()
             .set(&DataKey::Status, &EscrowStatus::Created);
