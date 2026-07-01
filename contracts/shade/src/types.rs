@@ -47,6 +47,12 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Campaign fundraising engine ---
+    Campaign(u64),
+    CampaignCount,
+    CampaignParticipants(u64),
+    CampaignParticipant(u64, Address),
+    CampaignAffiliate(u64, Address),
 }
 
 #[contracttype]
@@ -357,4 +363,45 @@ pub struct PaymentPayload {
     pub settlement_token: Address,
     pub route: PaymentRoute,
     pub max_slippage_bps: Option<u32>,
+}
+
+// --- Campaign fundraising engine ---
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Campaign {
+    pub id: u64,
+    pub owner: Address,
+    pub name: String,
+    pub charity: bool,
+    pub fee_waiver_bps: u32,
+    pub discount_bps: u32,
+    pub stake_required: i128,
+    pub total_raised: i128,
+    pub total_staked: i128,
+    pub total_slashed: i128,
+    pub total_commissions_paid: i128,
+    pub active: bool,
+    pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignParticipant {
+    pub campaign_id: u64,
+    pub participant: Address,
+    pub contributed: i128,
+    pub staked: i128,
+    pub slashed: i128,
+    pub commissions_paid: i128,
+    pub score: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignAffiliate {
+    pub campaign_id: u64,
+    pub affiliate: Address,
+    pub commission_bps: u32,
+    pub total_paid: i128,
+    pub active: bool,
 }
