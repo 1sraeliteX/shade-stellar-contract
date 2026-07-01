@@ -293,11 +293,11 @@ pub fn get_token_volume(env: &Env, token: &Address) -> i128 {
 
 fn record_token_payment(env: &Env, token: &Address, volume_amount: i128, fee_amount: i128) {
     let mut analytics = get_token_analytics(env, token);
-    
+
     // Check if this is a new merchant for this token
     let current_volume = get_token_volume(env, token);
     let is_new_merchant = current_volume == 0;
-    
+
     analytics.total_volume += volume_amount;
     analytics.total_fees += fee_amount;
     analytics.transaction_count += 1;
@@ -306,11 +306,10 @@ fn record_token_payment(env: &Env, token: &Address, volume_amount: i128, fee_amo
     }
     analytics.last_updated = env.ledger().timestamp();
 
-    env.storage().persistent().set(
-        &DataKey::TokenAnalytics(token.clone()),
-        &analytics,
-    );
-    
+    env.storage()
+        .persistent()
+        .set(&DataKey::TokenAnalytics(token.clone()), &analytics);
+
     env.storage().persistent().set(
         &DataKey::TokenVolume(token.clone()),
         &analytics.total_volume,
@@ -352,12 +351,12 @@ pub fn get_token_dominance_metrics(env: &Env, tokens: &Vec<Address>) -> Vec<(Add
 pub fn get_top_tokens_by_volume(env: &Env, limit: u32) -> Vec<(Address, i128)> {
     let accepted_tokens = crate::components::admin::get_accepted_tokens(env);
     let mut all_metrics = get_token_dominance_metrics(env, &accepted_tokens);
-    
+
     // Truncate to specified limit
     while all_metrics.len() > limit {
         all_metrics.pop_back();
     }
-    
+
     all_metrics
 }
 
@@ -366,18 +365,18 @@ pub fn get_token_market_share(env: &Env, token: &Address) -> i128 {
     if token_volume == 0 {
         return 0;
     }
-    
+
     let accepted_tokens = crate::components::admin::get_accepted_tokens(env);
     let mut total_volume: i128 = 0;
-    
+
     for t in accepted_tokens.iter() {
         total_volume += get_token_volume(env, &t);
     }
-    
+
     if total_volume == 0 {
         return 0;
     }
-    
+
     // Return market share as basis points (10000 = 100%)
     (token_volume * 10000) / total_volume
 }

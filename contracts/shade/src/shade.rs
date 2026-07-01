@@ -7,7 +7,6 @@
     upgrade as upgrade_component, history as history_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component, escrow as escrow_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -326,6 +325,31 @@ impl ShadeTrait for Shade {
         merchant_component::get_merchant_account(&env, merchant_id)
     }
 
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_threshold(
+            &env, &merchant, &token, threshold,
+        );
+    }
+
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        auto_withdrawal_component::get_auto_withdrawal_threshold(&env, merchant_id, &token)
+    }
+
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address) {
+        pausable_component::assert_not_paused(&env);
+        auto_withdrawal_component::set_auto_withdrawal_recipient(&env, &merchant, &recipient);
+    }
+
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address> {
+        auto_withdrawal_component::get_auto_withdrawal_recipient(&env, merchant_id)
+    }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
+
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64) {
         pausable_component::assert_not_paused(&env);
         invoice_component::pay_invoice(&env, &payer, invoice_id);
@@ -448,20 +472,112 @@ impl ShadeTrait for Shade {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction> {
         history_component::get_user_transactions(&env, user)
     }
-    
-    fn emit_bridge_placeholder(
-        env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    ) {
+
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload) {
         pausable_component::assert_not_paused(&env);
         caller.require_auth();
-        events::publish_bridge_placeholder_event(
+        events::publish_bridge_placeholder_event(&env, caller, payload, env.ledger().timestamp());
+    }
+
+    // ── Bridge listener / external deposits ──────────────────────────────────
+
+    fn register_bridge_listener(env: Env, admin: Address, listener: Address) {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::register_bridge_listener(&env, &admin, &listener);
+    }
+
+    fn remove_bridge_listener(env: Env, admin: Address, listener: Address) {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::remove_bridge_listener(&env, &admin, &listener);
+    }
+
+    fn is_bridge_listener(env: Env, listener: Address) -> bool {
+        bridge_component::is_bridge_listener(&env, &listener)
+    }
+
+    fn record_bridge_deposit(
+        env: Env,
+        listener: Address,
+        source_chain: String,
+        source_tx_id: BytesN<32>,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        bridge_component::record_bridge_deposit(
             &env,
-            caller,
-            payload,
-            env.ledger().timestamp(),
-        );
+            &listener,
+            source_chain,
+            source_tx_id,
+            token,
+            amount,
+            recipient,
+        )
+    }
+
+    fn get_bridge_deposit(env: Env, deposit_id: u64) -> Option<BridgeDeposit> {
+        bridge_component::get_bridge_deposit(&env, deposit_id)
+    }
+
+    fn is_bridge_deposit_processed(env: Env, source_tx_id: BytesN<32>) -> bool {
+        bridge_component::is_bridge_deposit_processed(&env, &source_tx_id)
+    }
+
+    fn get_bridge_deposit_count(env: Env) -> u64 {
+        bridge_component::get_bridge_deposit_count(&env)
+    }
+
+    fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128 {
+        bridge_component::get_bridge_credit(&env, &recipient, &token)
+    }
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    fn add_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::add_gov_member(&env, &admin, &member);
+    }
+
+    fn remove_gov_member(env: Env, admin: Address, member: Address) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::remove_gov_member(&env, &admin, &member);
+    }
+
+    fn is_gov_member(env: Env, member: Address) -> bool {
+        governance_component::is_gov_member(&env, &member)
+    }
+
+    fn get_gov_member_count(env: Env) -> u32 {
+        governance_component::get_gov_member_count(&env)
+    }
+
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::set_governance_config(&env, &admin, voting_period, quorum_bps);
+    }
+
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        governance_component::propose_upgrade(&env, &proposer, wasm_hash)
+    }
+
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::vote_on_upgrade(&env, &voter, proposal_id, approve);
+    }
+
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        governance_component::finalize_upgrade(&env, &caller, proposal_id);
+    }
+
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal> {
+        governance_component::get_upgrade_proposal(&env, proposal_id)
+    }
+
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool {
+        governance_component::has_voted(&env, proposal_id, &member)
     }
 
     // --- Event ticketing system ---

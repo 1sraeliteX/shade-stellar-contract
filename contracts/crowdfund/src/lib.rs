@@ -12,11 +12,13 @@ use soroban_sdk::{
     vec, Address, Env, String, Vec,
 };
 
+#[allow(dead_code)]
 #[contractclient(name = "InvoicePaymentClient")]
 trait InvoicePayment {
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
 }
 
+#[allow(dead_code)]
 #[contractclient(name = "MerchantAccountRefundClient")]
 trait MerchantAccountRefund {
     fn refund(env: Env, token: Address, amount: i128, to: Address);
@@ -130,6 +132,81 @@ pub struct BatchRefundProcessedEvent {
     pub contributor_count: u32,
 }
 
+/// Highly-detailed on-chain checkpoint of a campaign's aggregate statistics,
+/// emitted by the organizer to drive off-chain indexing and UI dashboards.
+#[contractevent]
+pub struct CampaignStatsSnapshotEvent {
+    pub caller: Address,
+    pub goal: i128,
+    pub raised: i128,
+    pub total_matched: i128,
+    pub matching_pool_balance: i128,
+    pub contributor_count: u32,
+    pub largest_pledge: i128,
+    pub percent_funded_bps: u32,
+    pub goal_reached: bool,
+    pub is_ended: bool,
+    pub timestamp: u64,
+}
+
+/// Aggregate, read-only statistics describing the current state of a campaign.
+/// All amounts are in token base units; `percent_funded_bps` is in basis
+/// points (10_000 = 100 %) and is saturated to `u32::MAX` for extreme
+/// overfunding. `seconds_remaining` is 0 once the deadline has passed.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignStats {
+    pub goal: i128,
+    pub raised: i128,
+    pub total_matched: i128,
+    pub matching_pool_balance: i128,
+    pub contributor_count: u32,
+    pub average_pledge: i128,
+    pub largest_pledge: i128,
+    pub largest_backer: Option<Address>,
+    pub percent_funded_bps: u32,
+    pub deadline: u64,
+    pub seconds_remaining: u64,
+    pub is_ended: bool,
+    pub goal_reached: bool,
+    pub executed: bool,
+}
+
+/// Gamification achievement a backer can earn. Each kind has on-chain
+/// eligibility rules verified at award time (see `assert_badge_eligible`).
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum BadgeKind {
+    /// The very first backer to pledge to the campaign.
+    FirstBacker = 0,
+    /// A backer within the first `EarlyBackerLimit` contributors.
+    EarlyBacker = 1,
+    /// A backer whose total pledge meets the `WhaleThreshold`.
+    Whale = 2,
+    /// A backer of a campaign that reached its funding goal.
+    GoalGetter = 3,
+}
+
+/// Emitted whenever a backer earns a badge — carries full structural metadata
+/// for off-chain indexing and UI achievement feeds.
+#[contractevent]
+pub struct BadgeAwardedEvent {
+    pub backer: Address,
+    pub kind: BadgeKind,
+    pub awarded_by: Address,
+    pub awarded_at: u64,
+    pub badge_count: u32,
+}
+
+/// Emitted when the organizer (re)configures badge eligibility thresholds.
+#[contractevent]
+pub struct BadgeConfigSetEvent {
+    pub organizer: Address,
+    pub whale_threshold: i128,
+    pub early_backer_limit: u32,
+}
+
 #[contracttype]
 enum DataKey {
     Organizer,
@@ -185,57 +262,96 @@ impl CrowdfundContract {
             panic_with_error!(&env, CrowdfundError::InvalidDeadline);
         }
 
-        env.storage().persistent().set(&DataKey::Organizer, &organizer);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Organizer, &organizer);
         env.storage().persistent().set(&DataKey::Token, &token);
         env.storage().persistent().set(&DataKey::Goal, &goal);
-        env.storage().persistent().set(&DataKey::Deadline, &deadline);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Deadline, &deadline);
         env.storage().persistent().set(&DataKey::Raised, &0_i128);
         env.storage().persistent().set(&DataKey::Executed, &false);
-        env.storage().persistent().set(&DataKey::RefundProcessed, &false);
-        env.storage().persistent().set(&DataKey::Contributors, &Vec::<Address>::new(&env));
+        env.storage()
+            .persistent()
+            .set(&DataKey::RefundProcessed, &false);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Contributors, &Vec::<Address>::new(&env));
     }
 
     pub fn set_shade_gateway(env: Env, shade_gateway: Address) {
-        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
         organizer.require_auth();
         if env.storage().persistent().has(&DataKey::ShadeGateway) {
             panic_with_error!(&env, CrowdfundError::AlreadyInitialized);
         }
-        env.storage().persistent().set(&DataKey::ShadeGateway, &shade_gateway);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ShadeGateway, &shade_gateway);
     }
 
     pub fn set_merchant_id(env: Env, merchant_id: u64) {
-        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
         organizer.require_auth();
         if env.storage().persistent().has(&DataKey::MerchantId) {
             panic_with_error!(&env, CrowdfundError::AlreadyInitialized);
         }
-        env.storage().persistent().set(&DataKey::MerchantId, &merchant_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::MerchantId, &merchant_id);
     }
 
     pub fn set_merchant_account(env: Env, merchant_account: Address) {
-        let organizer: Address = env.storage().persistent().get(&DataKey::Organizer)
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
         organizer.require_auth();
         if env.storage().persistent().has(&DataKey::MerchantAccount) {
             panic_with_error!(&env, CrowdfundError::AlreadyInitialized);
         }
-        env.storage().persistent().set(&DataKey::MerchantAccount, &merchant_account);
+        env.storage()
+            .persistent()
+            .set(&DataKey::MerchantAccount, &merchant_account);
     }
 
     pub fn pledge(env: Env, contributor: Address, amount: i128, invoice_id: u64) {
         contributor.require_auth();
-        if amount <= 0 { panic_with_error!(&env, CrowdfundError::InvalidAmount); }
+        if amount <= 0 {
+            panic_with_error!(&env, CrowdfundError::InvalidAmount);
+        }
 
-        let deadline: u64 = env.storage().persistent().get(&DataKey::Deadline)
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
-        if env.ledger().timestamp() > deadline { panic_with_error!(&env, CrowdfundError::CampaignEnded); }
-        if env.storage().persistent().get(&DataKey::Executed).unwrap_or(false) {
+        if env.ledger().timestamp() > deadline {
+            panic_with_error!(&env, CrowdfundError::CampaignEnded);
+        }
+        if env
+            .storage()
+            .persistent()
+            .get(&DataKey::Executed)
+            .unwrap_or(false)
+        {
             panic_with_error!(&env, CrowdfundError::AlreadyExecuted);
         }
 
+        let shade_gateway: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ShadeGateway)
         let discount_bps: u32 = {
             let now = env.ledger().timestamp();
             if let Some(tiers) = env.storage().persistent().get::<_, Vec<DiscountTier>>(&DataKey::DiscountTiers) {
@@ -253,31 +369,47 @@ impl CrowdfundContract {
         };
 
         let discounted_amount = amount * (10_000i128 - discount_bps as i128) / 10_000i128;
-
-        let shade_gateway: Address = env.storage().persistent().get(&DataKey::ShadeGateway)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::ShadeGatewayNotSet));
-        let token_addr: Address = env.storage().persistent().get(&DataKey::Token)
+        let token_addr: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Token)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
 
         InvoicePaymentClient::new(&env, &shade_gateway).pay_invoice(&contributor, &invoice_id);
 
-        let merchant_account: Address = env.storage().persistent().get(&DataKey::MerchantAccount)
+        let merchant_account: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantAccount)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::MerchantAccountNotSet));
-        MerchantAccountRefundClient::new(&env, &merchant_account)
-            .refund(&token_addr, &discounted_amount, &env.current_contract_address());
+        MerchantAccountRefundClient::new(&env, &merchant_account).refund(
+            &token_addr,
+            &amount,
+            &env.current_contract_address(),
+        );
 
         let new_raised = Self::apply_pledge_with_matching(&env, contributor.clone(), discounted_amount);
 
-        let prev: i128 = env.storage().persistent()
-            .get(&DataKey::Pledge(contributor.clone())).unwrap_or(0);
-        env.storage().persistent()
-            .set(&DataKey::Pledge(contributor.clone()), &prev.saturating_add(amount));
+        let prev: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pledge(contributor.clone()))
+            .unwrap_or(0);
+        env.storage().persistent().set(
+            &DataKey::Pledge(contributor.clone()),
+            &prev.saturating_add(amount),
+        );
 
         DiscountAppliedEvent { contributor: contributor.clone(), original_amount: amount, discounted_amount, discount_bps }.publish(&env);
 
         Self::track_contributor(&env, contributor.clone());
         Self::check_stretch_goals(&env, new_raised);
-        PledgeReceivedEvent { contributor, amount }.publish(&env);
+        PledgeReceivedEvent {
+            contributor,
+            amount,
+        }
+        .publish(&env);
     }
 
     pub fn contribute(env: Env, contributor: Address, amount: i128) {
@@ -304,8 +436,7 @@ impl CrowdfundContract {
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
 
         let contract_addr = env.current_contract_address();
-        token::TokenClient::new(&env, &token_addr)
-            .transfer(&contributor, &contract_addr, &amount);
+        token::TokenClient::new(&env, &token_addr).transfer(&contributor, &contract_addr, &amount);
 
         let new_raised = Self::apply_pledge_with_matching(&env, contributor.clone(), amount);
 
@@ -327,7 +458,11 @@ impl CrowdfundContract {
         let contract_addr = env.current_contract_address();
         token::TokenClient::new(&env, &token_addr).transfer(&sponsor, &contract_addr, &amount);
 
-        let current: i128 = env.storage().persistent().get(&DataKey::MatchingPool).unwrap_or(0);
+        let current: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MatchingPool)
+            .unwrap_or(0);
         env.storage()
             .persistent()
             .set(&DataKey::MatchingPool, &current.saturating_add(amount));
@@ -351,7 +486,11 @@ impl CrowdfundContract {
         env.storage()
             .persistent()
             .set(&DataKey::PledgeComment(contributor.clone()), &comment);
-        PledgeCommentAddedEvent { contributor, comment }.publish(&env);
+        PledgeCommentAddedEvent {
+            contributor,
+            comment,
+        }
+        .publish(&env);
     }
 
     pub fn get_comment(env: Env, contributor: Address) -> Option<String> {
@@ -361,7 +500,10 @@ impl CrowdfundContract {
     }
 
     pub fn matching_pool_balance(env: Env) -> i128 {
-        env.storage().persistent().get(&DataKey::MatchingPool).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&DataKey::MatchingPool)
+            .unwrap_or(0)
     }
 
     pub fn execute_campaign(env: Env) {
@@ -409,7 +551,12 @@ impl CrowdfundContract {
             panic_with_error!(&env, CrowdfundError::AlreadyExecuted);
         }
 
-        if env.storage().persistent().has(&DataKey::MilestonePercentages) {
+        // Milestone mode: use release_milestone instead.
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::MilestonePercentages)
+        {
             panic_with_error!(&env, CrowdfundError::MilestonesActive);
         }
 
@@ -422,8 +569,7 @@ impl CrowdfundContract {
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
 
         let contract_addr = env.current_contract_address();
-        token::TokenClient::new(&env, &token_addr)
-            .transfer(&contract_addr, &organizer, &raised);
+        token::TokenClient::new(&env, &token_addr).transfer(&contract_addr, &organizer, &raised);
 
         CampaignExecutedEvent { amount: raised }.publish(&env);
     }
@@ -478,50 +624,87 @@ impl CrowdfundContract {
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
 
         let contract_addr = env.current_contract_address();
-        token::TokenClient::new(&env, &token_addr)
-            .transfer(&contract_addr, &contributor, &pledge);
+        token::TokenClient::new(&env, &token_addr).transfer(&contract_addr, &contributor, &pledge);
 
-        RefundClaimedEvent { contributor: contributor.clone(), amount: pledge }.publish(&env);
+        RefundClaimedEvent {
+            contributor: contributor.clone(),
+            amount: pledge,
+        }
+        .publish(&env);
     }
 
     pub fn batch_refund(env: Env) {
-        let deadline: u64 = env.storage().persistent().get(&DataKey::Deadline)
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
         if env.ledger().timestamp() <= deadline {
             panic_with_error!(&env, CrowdfundError::CampaignNotEnded);
         }
 
-        let goal: i128 = env.storage().persistent().get(&DataKey::Goal)
+        let goal: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Goal)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
-        let raised: i128 = env.storage().persistent().get(&DataKey::Raised).unwrap_or(0);
-        if raised >= goal { panic_with_error!(&env, CrowdfundError::GoalReached); }
+        let raised: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Raised)
+            .unwrap_or(0);
+        if raised >= goal {
+            panic_with_error!(&env, CrowdfundError::GoalReached);
+        }
 
-        if env.storage().persistent().get(&DataKey::RefundProcessed).unwrap_or(false) {
+        if env
+            .storage()
+            .persistent()
+            .get(&DataKey::RefundProcessed)
+            .unwrap_or(false)
+        {
             panic_with_error!(&env, CrowdfundError::RefundAlreadyProcessed);
         }
-        env.storage().persistent().set(&DataKey::RefundProcessed, &true);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RefundProcessed, &true);
 
-        let token_addr: Address = env.storage().persistent().get(&DataKey::Token)
+        let token_addr: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Token)
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
         let token_client = token::TokenClient::new(&env, &token_addr);
         let contract_addr = env.current_contract_address();
 
-        let contributors: Vec<Address> = env.storage().persistent()
-            .get(&DataKey::Contributors).unwrap_or_else(|| Vec::new(&env));
+        let contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(&env));
         let count = contributors.len();
         let mut total_refunded: i128 = 0;
 
         for contributor in contributors.iter() {
-            let pledge: i128 = env.storage().persistent()
-                .get(&DataKey::Pledge(contributor.clone())).unwrap_or(0);
+            let pledge: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Pledge(contributor.clone()))
+                .unwrap_or(0);
             if pledge > 0 {
-                env.storage().persistent().set(&DataKey::Pledge(contributor.clone()), &0_i128);
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::Pledge(contributor.clone()), &0_i128);
                 token_client.transfer(&contract_addr, &contributor, &pledge);
                 total_refunded = total_refunded.saturating_add(pledge);
             }
         }
 
-        BatchRefundProcessedEvent { total_refunded, contributor_count: count }.publish(&env);
+        BatchRefundProcessedEvent {
+            total_refunded,
+            contributor_count: count,
+        }
+        .publish(&env);
     }
 
     pub fn set_stretch_goals(env: Env, milestones: Vec<i128>) {
@@ -598,7 +781,9 @@ impl CrowdfundContract {
             prev = tier.min_pledge;
         }
 
-        env.storage().persistent().set(&DataKey::RewardTiers, &tiers);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RewardTiers, &tiers);
     }
 
     pub fn select_reward_tier(env: Env, contributor: Address, tier_index: u32) {
@@ -628,7 +813,11 @@ impl CrowdfundContract {
             .persistent()
             .set(&DataKey::SelectedTier(contributor.clone()), &tier_index);
 
-        RewardTierSelectedEvent { contributor, tier_index }.publish(&env);
+        RewardTierSelectedEvent {
+            contributor,
+            tier_index,
+        }
+        .publish(&env);
     }
 
     pub fn get_selected_tier(env: Env, contributor: Address) -> Option<u32> {
@@ -653,7 +842,7 @@ impl CrowdfundContract {
             }
             sum = sum.saturating_add(p);
         }
-        if sum != 10_000 || percentages.len() == 0 {
+        if sum != 10_000 || percentages.is_empty() {
             panic_with_error!(&env, CrowdfundError::InvalidMilestonePercentages);
         }
 
@@ -728,7 +917,13 @@ impl CrowdfundContract {
             .set(&tally_key, &current.saturating_add(weight));
         env.storage().persistent().set(&vote_key, &approve);
 
-        MilestoneVoteCastEvent { index, voter, approve, weight }.publish(&env);
+        MilestoneVoteCastEvent {
+            index,
+            voter,
+            approve,
+            weight,
+        }
+        .publish(&env);
     }
 
     /// Release the proportional funds for an unlocked, unreleased milestone to the organizer.
@@ -822,8 +1017,7 @@ impl CrowdfundContract {
             .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
 
         let contract_addr = env.current_contract_address();
-        token::TokenClient::new(&env, &token_addr)
-            .transfer(&contract_addr, &organizer, &amount);
+        token::TokenClient::new(&env, &token_addr).transfer(&contract_addr, &organizer, &amount);
 
         MilestoneReleasedEvent { index, amount }.publish(&env);
     }
@@ -888,18 +1082,414 @@ impl CrowdfundContract {
         raised >= goal
     }
 
+    // ── Deep campaign statistics (read-only views) ────────────────────────────
+
+    /// Public, read-only aggregate statistics for the campaign.
+    ///
+    /// Safe to call by anyone (no auth) and free of state mutation, so it is
+    /// concurrency-safe: concurrent callers observe a consistent snapshot of
+    /// the persisted ledger state. Panics with `NotInitialized` if no campaign
+    /// has been created.
+    pub fn get_campaign_stats(env: Env) -> CampaignStats {
+        Self::compute_stats(&env)
+    }
+
+    /// Organizer-only ranked list of backers by total pledge (descending),
+    /// truncated to `limit` entries. Exposes per-backer amounts, so it requires
+    /// the organizer's authorization (role-based check).
+    pub fn get_backer_leaderboard(env: Env, caller: Address, limit: u32) -> Vec<(Address, i128)> {
+        Self::require_organizer(&env, &caller);
+
+        let contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Collect (backer, pledge) pairs with a positive pledge.
+        let mut pairs: Vec<(Address, i128)> = Vec::new(&env);
+        for c in contributors.iter() {
+            let pledge: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Pledge(c.clone()))
+                .unwrap_or(0);
+            if pledge > 0 {
+                pairs.push_back((c, pledge));
+            }
+        }
+
+        // Partial selection sort: pull the top `limit` pledges to the front.
+        let n = pairs.len();
+        let take = if limit < n { limit } else { n };
+        let mut result: Vec<(Address, i128)> = Vec::new(&env);
+        for i in 0..take {
+            let mut max_idx = i;
+            let mut max_amt = pairs.get(i).unwrap().1;
+            for j in (i + 1)..n {
+                let amt = pairs.get(j).unwrap().1;
+                if amt > max_amt {
+                    max_amt = amt;
+                    max_idx = j;
+                }
+            }
+            if max_idx != i {
+                let a = pairs.get(i).unwrap();
+                let b = pairs.get(max_idx).unwrap();
+                pairs.set(i, b);
+                pairs.set(max_idx, a);
+            }
+            result.push_back(pairs.get(i).unwrap());
+        }
+        result
+    }
+
+    /// Organizer-only action that publishes a detailed `CampaignStatsSnapshotEvent`
+    /// for off-chain indexers/UIs and returns the current statistics. The call
+    /// reads (does not alter) campaign state, so it is safe under concurrency.
+    pub fn snapshot_campaign_stats(env: Env, caller: Address) -> CampaignStats {
+        Self::require_organizer(&env, &caller);
+        let stats = Self::compute_stats(&env);
+        CampaignStatsSnapshotEvent {
+            caller,
+            goal: stats.goal,
+            raised: stats.raised,
+            total_matched: stats.total_matched,
+            matching_pool_balance: stats.matching_pool_balance,
+            contributor_count: stats.contributor_count,
+            largest_pledge: stats.largest_pledge,
+            percent_funded_bps: stats.percent_funded_bps,
+            goal_reached: stats.goal_reached,
+            is_ended: stats.is_ended,
+            timestamp: env.ledger().timestamp(),
+        }
+        .publish(&env);
+        stats
+    }
+
+    // ── Gamification: badges & achievements ───────────────────────────────────
+
+    /// Configure (or update) badge eligibility thresholds. Organizer-only.
+    /// `whale_threshold` is the minimum total pledge for the Whale badge;
+    /// `early_backer_limit` is how many of the first contributors qualify for
+    /// the EarlyBacker badge.
+    pub fn set_badge_config(
+        env: Env,
+        organizer: Address,
+        whale_threshold: i128,
+        early_backer_limit: u32,
+    ) {
+        Self::require_organizer(&env, &organizer);
+        if whale_threshold <= 0 {
+            panic_with_error!(&env, CrowdfundError::InvalidAmount);
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::WhaleThreshold, &whale_threshold);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EarlyBackerLimit, &early_backer_limit);
+        BadgeConfigSetEvent {
+            organizer,
+            whale_threshold,
+            early_backer_limit,
+        }
+        .publish(&env);
+    }
+
+    /// Award `kind` to `backer` after verifying the badge's on-chain eligibility
+    /// rules. Callable by the backer themselves (self-claim) or by the organizer
+    /// (role-based check). Idempotent guard: a backer cannot earn the same badge
+    /// twice, so repeated/concurrent calls converge safely.
+    pub fn award_badge(env: Env, caller: Address, backer: Address, kind: BadgeKind) {
+        caller.require_auth();
+
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        if caller != backer && caller != organizer {
+            panic_with_error!(&env, CrowdfundError::NotAuthorized);
+        }
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::Badge(backer.clone(), kind))
+        {
+            panic_with_error!(&env, CrowdfundError::BadgeAlreadyAwarded);
+        }
+
+        Self::assert_badge_eligible(&env, &backer, kind);
+
+        let now = env.ledger().timestamp();
+        env.storage()
+            .persistent()
+            .set(&DataKey::Badge(backer.clone(), kind), &now);
+
+        let prev_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BadgeCount(backer.clone()))
+            .unwrap_or(0);
+        let badge_count = prev_count.saturating_add(1);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BadgeCount(backer.clone()), &badge_count);
+
+        BadgeAwardedEvent {
+            backer,
+            kind,
+            awarded_by: caller,
+            awarded_at: now,
+            badge_count,
+        }
+        .publish(&env);
+    }
+
+    /// Whether `backer` holds the given badge.
+    pub fn has_badge(env: Env, backer: Address, kind: BadgeKind) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::Badge(backer, kind))
+    }
+
+    /// The ledger timestamp at which `backer` earned `kind`, if owned.
+    pub fn badge_awarded_at(env: Env, backer: Address, kind: BadgeKind) -> Option<u64> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Badge(backer, kind))
+    }
+
+    /// Number of distinct badges `backer` has earned.
+    pub fn badge_count(env: Env, backer: Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::BadgeCount(backer))
+            .unwrap_or(0)
+    }
+
+    /// The full set of badges `backer` currently holds.
+    pub fn get_backer_badges(env: Env, backer: Address) -> Vec<BadgeKind> {
+        let mut owned: Vec<BadgeKind> = Vec::new(&env);
+        for kind in [
+            BadgeKind::FirstBacker,
+            BadgeKind::EarlyBacker,
+            BadgeKind::Whale,
+            BadgeKind::GoalGetter,
+        ] {
+            if env
+                .storage()
+                .persistent()
+                .has(&DataKey::Badge(backer.clone(), kind))
+            {
+                owned.push_back(kind);
+            }
+        }
+        owned
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /// Verify that `backer` satisfies the eligibility rules for `kind`,
+    /// panicking with `BadgeNotEligible` (or `BadgeConfigNotSet`) otherwise.
+    fn assert_badge_eligible(env: &Env, backer: &Address, kind: BadgeKind) {
+        // Every badge requires the holder to be an actual backer.
+        let pledge: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pledge(backer.clone()))
+            .unwrap_or(0);
+        if pledge <= 0 {
+            panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+        }
+
+        match kind {
+            BadgeKind::FirstBacker => {
+                let contributors: Vec<Address> = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Contributors)
+                    .unwrap_or_else(|| Vec::new(env));
+                let is_first = matches!(contributors.first(), Some(first) if first == *backer);
+                if !is_first {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::EarlyBacker => {
+                let limit: u32 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::EarlyBackerLimit)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::BadgeConfigNotSet));
+                let contributors: Vec<Address> = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Contributors)
+                    .unwrap_or_else(|| Vec::new(env));
+                let mut eligible = false;
+                for (i, c) in contributors.iter().enumerate() {
+                    if c == *backer {
+                        eligible = (i as u32) < limit;
+                        break;
+                    }
+                }
+                if !eligible {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::Whale => {
+                let threshold: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::WhaleThreshold)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::BadgeConfigNotSet));
+                if pledge < threshold {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+            BadgeKind::GoalGetter => {
+                let goal: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Goal)
+                    .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+                let raised: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Raised)
+                    .unwrap_or(0);
+                if raised < goal {
+                    panic_with_error!(env, CrowdfundError::BadgeNotEligible);
+                }
+            }
+        }
+    }
+
+    /// Require that `caller` is the campaign organizer (authenticated).
+    fn require_organizer(env: &Env, caller: &Address) {
+        caller.require_auth();
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+        if *caller != organizer {
+            panic_with_error!(env, CrowdfundError::NotAuthorized);
+        }
+    }
+
+    /// Build the aggregate `CampaignStats` from persisted state.
+    fn compute_stats(env: &Env) -> CampaignStats {
+        let goal: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Goal)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+
+        let raised: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Raised)
+            .unwrap_or(0);
+        let total_matched: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TotalMatched)
+            .unwrap_or(0);
+        let matching_pool_balance: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MatchingPool)
+            .unwrap_or(0);
+        let executed: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Executed)
+            .unwrap_or(false);
+
+        let contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(env));
+        let contributor_count = contributors.len();
+
+        // Largest pledge and its backer (read-only scan; accurate regardless of
+        // how individual pledges were accumulated).
+        let mut largest_pledge: i128 = 0;
+        let mut largest_backer: Option<Address> = None;
+        for c in contributors.iter() {
+            let pledge: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Pledge(c.clone()))
+                .unwrap_or(0);
+            if pledge > largest_pledge {
+                largest_pledge = pledge;
+                largest_backer = Some(c);
+            }
+        }
+
+        let average_pledge = if contributor_count > 0 {
+            raised / contributor_count as i128
+        } else {
+            0
+        };
+
+        let percent_funded_bps = if goal > 0 {
+            let bps = raised.saturating_mul(10_000) / goal;
+            bps.clamp(0, u32::MAX as i128) as u32
+        } else {
+            0
+        };
+
+        let now = env.ledger().timestamp();
+        let is_ended = now > deadline;
+        let seconds_remaining = if is_ended { 0 } else { deadline - now };
+        let goal_reached = raised >= goal;
+
+        CampaignStats {
+            goal,
+            raised,
+            total_matched,
+            matching_pool_balance,
+            contributor_count,
+            average_pledge,
+            largest_pledge,
+            largest_backer,
+            percent_funded_bps,
+            deadline,
+            seconds_remaining,
+            is_ended,
+            goal_reached,
+            executed,
+        }
+    }
 
     /// Emit a `stretch / reached` event for each milestone crossed by `new_raised`
     /// that has not already been triggered.
     fn track_contributor(env: &Env, contributor: Address) {
-        let mut contributors: Vec<Address> = env.storage().persistent()
-            .get(&DataKey::Contributors).unwrap_or_else(|| Vec::new(env));
+        let mut contributors: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Contributors)
+            .unwrap_or_else(|| Vec::new(env));
         for c in contributors.iter() {
-            if c == contributor { return; }
+            if c == contributor {
+                return;
+            }
         }
         contributors.push_back(contributor);
-        env.storage().persistent().set(&DataKey::Contributors, &contributors);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Contributors, &contributors);
     }
 
     fn check_stretch_goals(env: &Env, new_raised: i128) {
@@ -931,7 +1521,11 @@ impl CrowdfundContract {
     }
 
     fn apply_pledge_with_matching(env: &Env, contributor: Address, amount: i128) -> i128 {
-        let matching_pool: i128 = env.storage().persistent().get(&DataKey::MatchingPool).unwrap_or(0);
+        let matching_pool: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::MatchingPool)
+            .unwrap_or(0);
         let matched_amount = if matching_pool >= amount {
             amount
         } else {
@@ -942,6 +1536,15 @@ impl CrowdfundContract {
                 &DataKey::MatchingPool,
                 &matching_pool.saturating_sub(matched_amount),
             );
+            let total_matched: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::TotalMatched)
+                .unwrap_or(0);
+            env.storage().persistent().set(
+                &DataKey::TotalMatched,
+                &total_matched.saturating_add(matched_amount),
+            );
             MatchAppliedEvent {
                 contributor: contributor.clone(),
                 matched_amount,
@@ -950,18 +1553,25 @@ impl CrowdfundContract {
         }
 
         let effective_amount = amount.saturating_add(matched_amount);
-        let raised: i128 = env.storage().persistent().get(&DataKey::Raised).unwrap_or(0);
+        let raised: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Raised)
+            .unwrap_or(0);
         let new_raised = raised.saturating_add(effective_amount);
-        env.storage().persistent().set(&DataKey::Raised, &new_raised);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Raised, &new_raised);
 
         let prev_pledge: i128 = env
             .storage()
             .persistent()
             .get(&DataKey::Pledge(contributor.clone()))
             .unwrap_or(0);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Pledge(contributor), &prev_pledge.saturating_add(effective_amount));
+        env.storage().persistent().set(
+            &DataKey::Pledge(contributor),
+            &prev_pledge.saturating_add(effective_amount),
+        );
 
         new_raised
     }
