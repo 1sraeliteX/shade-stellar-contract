@@ -1,5 +1,10 @@
 use crate::types::{
-    Campaign, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    CrossChainBridgePayload, Event, EventFilter, Invoice, InvoiceFilter, InvoicePage, Merchant,
+    MerchantFilter, MerchantPage, MerchantAnalytics, MerchantAnalyticsSummary, OracleConfig,
+    PaymentPayload, PendingFee, Role, Subscription, SubscriptionFilter, SubscriptionPlan,
+    SubscriptionPlanFilter, Ticket, TokenAnalytics, Transaction, WithdrawalProposal,
+    WithdrawalProposalFilter,
+    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
     MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
     Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, Escrow
     BackerCampaign, BackerPerk, BackerRewardTier, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant,
@@ -322,6 +327,92 @@ pub trait ShadeTrait {
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
 
+    // ── Multi-sig massive withdrawal ─────────────────────────────────────────
+
+    /// Set the per-token withdrawal threshold above which multi-sig is required.
+    /// Admin-only.
+    fn set_multisig_threshold(env: Env, admin: Address, token: Address, threshold: i128);
+
+    /// Return the configured threshold for a token, or panic if not set.
+    fn get_multisig_threshold(env: Env, token: Address) -> i128;
+
+    /// Replace the signer list and required quorum.
+    /// Admin-only.  `signers` must be non-empty and `quorum` must be ≤ signers.len().
+    fn configure_multisig(env: Env, admin: Address, signers: Vec<Address>, quorum: u32);
+
+    /// Open a new withdrawal proposal for a large merchant withdrawal.
+    /// The amount must be ≥ the configured threshold for the token.
+    /// Returns the new proposal ID.
+    fn propose_withdrawal(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+        note: String,
+    ) -> u64;
+
+    /// Cast an approval vote on a pending withdrawal proposal.
+    /// Caller must be a registered signer.
+    /// When approvals reach quorum, funds are transferred automatically.
+    fn approve_withdrawal(env: Env, signer: Address, proposal_id: u64);
+
+    /// Cancel a pending withdrawal proposal.
+    /// Only the proposing merchant or the contract admin may cancel.
+    fn cancel_withdrawal(env: Env, caller: Address, proposal_id: u64);
+
+    /// Fetch a withdrawal proposal by ID.
+    fn get_withdrawal_proposal(env: Env, proposal_id: u64) -> WithdrawalProposal;
+
+    /// Check whether a signer has already approved a specific proposal.
+    fn has_approved_withdrawal(env: Env, signer: Address, proposal_id: u64) -> bool;
+
+    /// Return the total number of withdrawal proposals ever created.
+    fn get_withdrawal_proposal_count(env: Env) -> u64;
+
+    // ── On-chain search and filtering utilities (#353) ───────────────────────
+
+    /// Paginated invoice search with full filter support.
+    /// Pass `cursor = 0` for the first page.
+    fn search_invoices_paginated(
+        env: Env,
+        caller: Address,
+        filter: InvoiceFilter,
+        cursor: u64,
+        page_size: u32,
+    ) -> InvoicePage;
+
+    /// Paginated merchant search with active/verified filter support.
+    fn search_merchants_paginated(
+        env: Env,
+        filter: MerchantFilter,
+        cursor: u64,
+        page_size: u32,
+    ) -> MerchantPage;
+
+    /// Filter subscription plans by merchant, active status, or token.
+    fn search_subscription_plans(
+        env: Env,
+        caller: Address,
+        filter: SubscriptionPlanFilter,
+    ) -> Vec<SubscriptionPlan>;
+
+    /// Filter subscriptions by plan ID, customer address, or status.
+    fn search_subscriptions(env: Env, filter: SubscriptionFilter) -> Vec<Subscription>;
+
+    /// Filter on-chain events by merchant, cancelled status, date range,
+    /// or minimum available seats.
+    fn search_events(env: Env, caller: Address, filter: EventFilter) -> Vec<Event>;
+
+    /// Filter withdrawal proposals by merchant, status, token, or creation time.
+    fn search_withdrawal_proposals(
+        env: Env,
+        caller: Address,
+        filter: WithdrawalProposalFilter,
+    ) -> Vec<WithdrawalProposal>;
+
+    /// Look up a merchant ID from their address. Returns 0 if not registered.
+    fn find_merchant_id(env: Env, address: Address) -> u64;
     /// Create an escrow for physical goods
     fn create_escrow(
         env: Env,

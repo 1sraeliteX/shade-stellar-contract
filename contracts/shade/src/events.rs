@@ -1456,6 +1456,32 @@ pub fn publish_auto_withdrawal_recipient_set_event(
     .publish(env);
 }
 
+/// Emitted each time a registered signer approves a proposal.
+#[contractevent]
+pub struct WithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    /// Signer that cast this approval.
+    pub signer: Address,
+    /// Running approval count after this vote.
+    pub approvals_so_far: u32,
+    /// Quorum still needed (0 means ready to execute).
+    pub quorum_required: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_approved_event(
+    env: &Env,
+    proposal_id: u64,
+    signer: Address,
+    approvals_so_far: u32,
+    quorum_required: u32,
+    timestamp: u64,
+) {
+    WithdrawalApprovedEvent {
+        proposal_id,
+        signer,
+        approvals_so_far,
+        quorum_required,
 #[contractevent]
 pub struct AutoWithdrawalTriggeredEvent {
     pub merchant_id: u64,
@@ -1482,6 +1508,45 @@ pub fn publish_auto_withdrawal_triggered_event(
 
 // ── Escrow expired-refund event ────────────────────────────────────────────────
 
+/// Emitted when a subscription plan query is executed.
+#[contractevent]
+pub struct SubscriptionPlanSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_subscription_plan_search_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    SubscriptionPlanSearchExecutedEvent {
+        caller,
+        result_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+/// Emitted when an event (ticketing) query is executed.
+#[contractevent]
+pub struct EventSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_event_search_executed_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    EventSearchExecutedEvent {
+        caller,
+        result_count,
 #[contractevent]
 pub struct EscrowExpiredRefundEvent {
     pub invoice_id: u64,

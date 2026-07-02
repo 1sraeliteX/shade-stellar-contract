@@ -48,7 +48,27 @@ pub enum ContractError {
     TicketNotFound = 51,
     NotTicketOwner = 52,
     InvalidResalePrice = 54,
-    /// An external deposit with this origin-chain tx hash was already credited.
+    // ── Multi-sig massive withdrawal ─────────────────────────────────────────
+    /// The withdrawal amount is below the configured threshold; no multi-sig needed.
+    BelowMultiSigThreshold = 55,
+    /// No signers have been registered for multi-sig.
+    MultiSigSignersNotSet = 56,
+    /// The quorum value must be > 0 and ≤ the number of registered signers.
+    InvalidQuorum = 57,
+    /// The caller is not in the registered signer list.
+    NotASigner = 58,
+    /// This signer has already approved the given proposal.
+    AlreadyApproved = 59,
+    /// The referenced withdrawal proposal does not exist.
+    ProposalNotFound = 60,
+    /// The proposal is not in the Pending state and cannot be acted on.
+    ProposalNotPending = 61,
+    /// The proposal has not yet collected enough approvals for execution.
+    QuorumNotReached = 62,
+    /// Only the original proposer (merchant) may cancel their own proposal.
+    NotProposer = 63,
+    /// The multi-sig threshold has not been configured for this token.
+    ThresholdNotSet = 64,
     EscrowNotFound = 55,
     InvalidEscrowStatus = 56,
     CampaignNotFound = 55,
