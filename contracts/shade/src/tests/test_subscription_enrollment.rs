@@ -48,7 +48,13 @@ fn setup_enroll_env() -> EnrollCtx<'static> {
         &MONTHLY_INTERVAL,
     );
 
-    EnrollCtx { env, client, merchant, token: token_addr, plan_id }
+    EnrollCtx {
+        env,
+        client,
+        merchant,
+        token: token_addr,
+        plan_id,
+    }
 }
 
 // ---------------------------------------------------------------------------

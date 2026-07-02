@@ -36,13 +36,8 @@ fn setup_paid_invoice_with_expiry(
 
     let amount = 1_000_i128;
     let description = String::from_str(&env, "Escrow Invoice");
-    let invoice_id = client.create_invoice(
-        &merchant,
-        &description,
-        &amount,
-        &token,
-        &Some(expires_at),
-    );
+    let invoice_id =
+        client.create_invoice(&merchant, &description, &amount, &token, &Some(expires_at));
 
     let buyer = Address::generate(&env);
     let token_mint = token::StellarAssetClient::new(&env, &token);

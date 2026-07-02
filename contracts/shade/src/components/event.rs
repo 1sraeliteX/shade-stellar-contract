@@ -220,17 +220,19 @@ pub fn configure_dynamic_pricing(
         panic_with_error!(env, ContractError::InvalidAmount);
     }
 
-    if early_bird_end != 0 {
-        if early_bird_end > event.event_date || early_bird_end < env.ledger().timestamp() {
-            panic_with_error!(env, ContractError::InvalidAmount);
-        }
+    if early_bird_end != 0
+        && (early_bird_end > event.event_date || early_bird_end < env.ledger().timestamp())
+    {
+        panic_with_error!(env, ContractError::InvalidAmount);
     }
 
     event.early_bird_end = early_bird_end;
     event.early_bird_discount_bps = early_bird_discount_bps;
     event.late_markup_bps = late_markup_bps;
 
-    env.storage().persistent().set(&DataKey::Event(event_id), &event);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Event(event_id), &event);
 }
 
 pub fn get_current_ticket_price(env: &Env, event_id: u64) -> i128 {
@@ -274,7 +276,9 @@ pub fn cancel_event_and_batch_refund(env: &Env, merchant_addr: &Address, event_i
     }
 
     event.refunds_processed = true;
-    env.storage().persistent().set(&DataKey::Event(event_id), &event);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Event(event_id), &event);
 }
 
 // ── Resale with royalty (Issue #254) ──────────────────────────────────────────
@@ -478,7 +482,9 @@ pub fn purchase_tickets_bulk(
     token_client.transfer(buyer, merchant_account, &net);
 
     event.sold = event.sold.saturating_add(quantity);
-    env.storage().persistent().set(&DataKey::Event(*event_id), &event);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Event(*event_id), &event);
 }
 
 fn is_event_merchant(env: &Env, event: &Event, merchant_addr: &Address) -> bool {

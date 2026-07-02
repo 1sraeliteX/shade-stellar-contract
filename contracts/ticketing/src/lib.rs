@@ -51,6 +51,9 @@ pub struct Ticket {
     /// Pricing tier this ticket belongs to. `None` means the ticket was issued
     /// without tier metadata (e.g. flat-priced events).
     pub tier_id: Option<u64>,
+    /// Set to `true` once the ticket has been refunded / cancelled. Refunded
+    /// tickets are removed from the event's active list and cannot be reused.
+    pub refunded: bool,
 }
 
 /// A pricing tier within an event (e.g. "VIP", "Standard", "Early Bird").
@@ -124,6 +127,7 @@ enum DataKey {
     TierCount,
     EventTiers(u64),   // Vec<u64> - tier IDs for an event
     ResaleConfig(u64), // ResaleConfig keyed by event_id
+    Waitlist(u64),     // Vec<WaitlistEntry> - FIFO waitlist per event
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────────
@@ -147,6 +151,87 @@ pub fn publish_event_created_event(
         event_id,
         organizer,
         name,
+        timestamp,
+    }
+    .publish(env);
+}
+
+pub fn publish_event_cancelled_event(env: &Env, event_id: u64, organizer: Address, timestamp: u64) {
+    EventCancelledEvent {
+        event_id,
+        organizer,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct TicketRefundedEvent {
+    pub ticket_id: u64,
+    pub event_id: u64,
+    pub holder: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_ticket_refunded_event(
+    env: &Env,
+    ticket_id: u64,
+    event_id: u64,
+    holder: Address,
+    timestamp: u64,
+) {
+    TicketRefundedEvent {
+        ticket_id,
+        event_id,
+        holder,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct WaitlistJoinedEvent {
+    pub event_id: u64,
+    pub applicant: Address,
+    pub position: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_waitlist_joined_event(
+    env: &Env,
+    event_id: u64,
+    applicant: Address,
+    position: u32,
+    timestamp: u64,
+) {
+    WaitlistJoinedEvent {
+        event_id,
+        applicant,
+        position,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct WaitlistAssignedEvent {
+    pub event_id: u64,
+    pub assignee: Address,
+    pub ticket_id: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_waitlist_assigned_event(
+    env: &Env,
+    event_id: u64,
+    assignee: Address,
+    ticket_id: u64,
+    timestamp: u64,
+) {
+    WaitlistAssignedEvent {
+        event_id,
+        assignee,
+        ticket_id,
         timestamp,
     }
     .publish(env);
@@ -309,9 +394,66 @@ fn add_ticket_to_event(env: &Env, event_id: u64, ticket_id: u64) {
     env.storage().persistent().set(&key, &tickets);
 }
 
-fn is_event_organizer(env: &Env, event_id: u64, organizer: &Address) -> bool {
-    let event: Event = env
+/// Remove a ticket from an event's active ticket list (e.g. on refund),
+/// freeing one capacity slot.
+fn remove_ticket_from_event(env: &Env, event_id: u64, ticket_id: u64) {
+    let key = DataKey::EventTickets(event_id);
+    let tickets: Vec<u64> = env
         .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    let mut remaining: Vec<u64> = Vec::new(env);
+    for id in tickets.iter() {
+        if id != ticket_id {
+            remaining.push_back(id);
+        }
+    }
+    env.storage().persistent().set(&key, &remaining);
+}
+
+/// Number of active (non-refunded) tickets currently issued for an event.
+fn active_ticket_count(env: &Env, event_id: u64) -> u64 {
+    let tickets: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::EventTickets(event_id))
+        .unwrap_or_else(|| Vec::new(env));
+    tickets.len() as u64
+}
+
+/// Load the FIFO waitlist queue for an event.
+fn get_waitlist(env: &Env, event_id: u64) -> Vec<WaitlistEntry> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Waitlist(event_id))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+/// Persist the FIFO waitlist queue for an event.
+fn save_waitlist(env: &Env, event_id: u64, waitlist: &Vec<WaitlistEntry>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Waitlist(event_id), waitlist);
+}
+
+/// Mint a flat (tier-less) ticket and register it with the event. Returns the
+/// new ticket id. Used by waitlist auto-assignment.
+fn mint_ticket(env: &Env, event_id: u64, holder: Address, qr_hash: BytesN<32>) -> u64 {
+    let ticket_count = get_ticket_count(env);
+    let new_ticket_id = ticket_count + 1;
+
+    let ticket = Ticket {
+        ticket_id: new_ticket_id,
+        event_id,
+        holder: holder.clone(),
+        qr_hash: qr_hash.clone(),
+        checked_in: false,
+        check_in_time: None,
+        tier_id: None,
+        refunded: false,
+    };
+    env.storage()
         .persistent()
         .set(&DataKey::Ticket(new_ticket_id), &ticket);
 
@@ -328,6 +470,15 @@ fn is_event_organizer(env: &Env, event_id: u64, organizer: &Address) -> bool {
     );
 
     new_ticket_id
+}
+
+fn is_event_organizer(env: &Env, event_id: u64, organizer: &Address) -> bool {
+    let event: Event = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Event(event_id))
+        .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
+    &event.organizer == organizer
 }
 
 fn get_tier_count(env: &Env) -> u64 {
@@ -430,7 +581,8 @@ impl TicketingContract {
     pub fn cancel_event(env: Env, organizer: Address, event_id: u64) {
         organizer.require_auth();
 
-        let mut event: Event = env.storage()
+        let mut event: Event = env
+            .storage()
             .persistent()
             .get(&DataKey::Event(event_id))
             .unwrap_or_else(|| panic_with_error!(env, TicketingError::EventNotFound));
@@ -449,12 +601,7 @@ impl TicketingContract {
             .persistent()
             .set(&DataKey::Event(event_id), &event);
 
-        publish_event_cancelled_event(
-            &env,
-            event_id,
-            organizer,
-            env.ledger().timestamp(),
-        );
+        publish_event_cancelled_event(&env, event_id, organizer, env.ledger().timestamp());
     }
 
     /// Issue a ticket for an event.
@@ -521,6 +668,7 @@ impl TicketingContract {
             checked_in: false,
             check_in_time: None,
             tier_id: None,
+            refunded: false,
         };
 
         env.storage()
@@ -697,6 +845,7 @@ impl TicketingContract {
             checked_in: false,
             check_in_time: None,
             tier_id: Some(tier_id),
+            refunded: false,
         };
         env.storage()
             .persistent()
@@ -927,7 +1076,7 @@ impl TicketingContract {
         publish_ticket_refunded_event(&env, ticket_id, event_id, holder, timestamp);
 
         // ── Auto-assign waitlist ──────────────────────────────────────────────
-        let mut waitlist = get_waitlist(&env, event_id);
+        let waitlist = get_waitlist(&env, event_id);
         if !waitlist.is_empty() {
             // Pop the front of the FIFO queue
             let first = waitlist.get(0).unwrap();
@@ -943,13 +1092,9 @@ impl TicketingContract {
             // Generate a deterministic placeholder QR hash for the new ticket.
             // The assignee should replace this off-chain before the event.
             let mut placeholder = [0u8; 32];
-            let id_bytes = ticket_id.to_be_bytes();
-            let ts_bytes = timestamp.to_be_bytes();
-            for i in 0..8 {
-                placeholder[i] = id_bytes[i];
-                placeholder[i + 8] = ts_bytes[i];
-            }
-            let qr_hash = BytesN::from_slice(&env, &placeholder);
+            placeholder[0..8].copy_from_slice(&ticket_id.to_be_bytes());
+            placeholder[8..16].copy_from_slice(&timestamp.to_be_bytes());
+            let qr_hash = BytesN::from_array(&env, &placeholder);
 
             let new_ticket_id = mint_ticket(&env, event_id, assignee.clone(), qr_hash);
 
