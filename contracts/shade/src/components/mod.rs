@@ -12,6 +12,8 @@ pub mod merchant;
 pub mod multisig_withdrawal;
 pub mod pausable;
 pub mod payment;
+pub mod platform_fee;
+pub mod pledge;
 pub mod reentrancy;
 pub mod search;
 pub mod signature_util;

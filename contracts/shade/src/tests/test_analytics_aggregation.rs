@@ -1,4 +1,5 @@
 #![cfg(test)]
+extern crate std;
 
 use crate::shade::{Shade, ShadeClient};
 use crate::types::{MerchantAnalytics, MerchantAnalyticsSummary, TokenAnalytics};

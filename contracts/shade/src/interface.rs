@@ -80,6 +80,7 @@ pub trait ShadeTrait {
     fn get_invoice(env: Env, invoice_id: u64) -> Invoice;
     fn resolve_invoice_amount(env: Env, invoice_id: u64) -> i128;
     fn refund_invoice(env: Env, merchant: Address, invoice_id: u64);
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
     fn set_merchant_key(env: Env, merchant: Address, key: BytesN<32>);
     fn get_merchant_key(env: Env, merchant: Address) -> BytesN<32>;
     fn grant_role(env: Env, admin: Address, user: Address, role: Role);
@@ -98,6 +99,26 @@ pub trait ShadeTrait {
         status: bool,
     );
     fn calculate_fee(env: Env, merchant: Address, token: Address, amount: i128) -> i128;
+    fn compute_platform_fee_split(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+    ) -> PlatformFeeSplit;
+    fn set_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+        fee_bps: i128,
+    );
+    fn get_merchant_platform_fee(env: Env, merchant_id: u64, token: Address) -> Option<i128>;
+    fn clear_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+    );
     fn get_merchant_volume(env: Env, merchant: Address, token: Address) -> i128;
     fn get_merchant_analytics(env: Env, merchant: Address, token: Address) -> MerchantAnalytics;
     fn get_merchant_analytics_summary(env: Env, merchant: Address) -> MerchantAnalyticsSummary;

@@ -9,7 +9,7 @@ mod tests;
 use errors::CrowdfundError;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, contracttype, panic_with_error, token,
-    vec, Address, Env, String, Vec,
+    vec, Address, BytesN, Env, String, Vec,
 };
 
 #[allow(dead_code)]
@@ -120,9 +120,45 @@ pub struct PledgeCommentAddedEvent {
     pub comment: String,
 }
 
+// ── Affiliate / referral events (#349) ───────────────────────────────────────
+
+#[contractevent]
+pub struct AffiliateRegisteredEvent {
+    pub affiliate: Address,
+    pub code_hash: BytesN<32>,
+    pub commission_bps: u32,
+}
+
+#[contractevent]
+pub struct ReferralUsedEvent {
+    pub contributor: Address,
+    pub affiliate: Address,
+    pub code_hash: BytesN<32>,
+    pub contribution_amount: i128,
+    pub commission_amount: i128,
+}
+
 #[contractevent]
 pub struct PledgeReceivedEvent {
     pub contributor: Address,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct AffiliateRegisteredEvent {
+    pub affiliate: Address,
+}
+
+#[contractevent]
+pub struct AffiliateAccruedEvent {
+    pub affiliate: Address,
+    pub contributor: Address,
+    pub commission: i128,
+}
+
+#[contractevent]
+pub struct AffiliateClaimedEvent {
+    pub affiliate: Address,
     pub amount: i128,
 }
 
@@ -233,6 +269,20 @@ enum DataKey {
     Contributors,
     RefundProcessed,
     MatchingPool,
+    // Public comment attached to a contributor pledge.
+    // ── Affiliate / referral tracking (#349) ────────────────────────────────
+    // Commission rate (in basis points) paid to affiliates from the raised pool.
+    AffiliateCommissionBps,
+    // Referral code (hash) → affiliate address.
+    ReferralCodeOwner(BytesN<32>),
+    // Affiliate address → referral code (hash).
+    AffiliateCode(Address),
+    // Per-code count of unique contributors who used the code.
+    ReferralCount(BytesN<32>),
+    // Cumulative commission earned by the affiliate for a given code.
+    ReferralEarnings(BytesN<32>),
+    // Tracks which referral code (if any) a contributor used.
+    PledgeReferral(Address),
     PledgeComment(Address),
     DiscountTiers,
     DiscountApplied(Address),
@@ -347,6 +397,11 @@ impl CrowdfundContract {
         {
             panic_with_error!(&env, CrowdfundError::AlreadyExecuted);
         }
+        
+        // Check KYC requirements
+        if Self::is_kyc_required(env.clone()) && !Self::is_kyc_verified(env.clone(), contributor.clone()) {
+            panic_with_error!(&env, CrowdfundError::KYCRequired);
+        }
 
         let shade_gateway: Address = env
             .storage()
@@ -428,6 +483,11 @@ impl CrowdfundContract {
         if env.ledger().timestamp() > deadline {
             panic_with_error!(&env, CrowdfundError::CampaignEnded);
         }
+        
+        // Check KYC requirements
+        if Self::is_kyc_required(env.clone()) && !Self::is_kyc_verified(env.clone(), contributor.clone()) {
+            panic_with_error!(&env, CrowdfundError::KYCRequired);
+        }
 
         let token_addr: Address = env
             .storage()
@@ -506,6 +566,243 @@ impl CrowdfundContract {
             .unwrap_or(0)
     }
 
+    // ── Affiliate / referral tracking (#349) ────────────────────────────────
+
+    /// Set the campaign-wide commission rate that affiliates earn on
+    /// contributions made through their referral links. Must be called by the
+    /// organizer. `commission_bps` is in basis points (max 10 000 = 100 %).
+    pub fn set_affiliate_commission(env: Env, commission_bps: u32) {
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        organizer.require_auth();
+
+        if commission_bps > 10_000 {
+            panic_with_error!(&env, CrowdfundError::InvalidCommissionBps);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::AffiliateCommissionBps, &commission_bps);
+    }
+
+    /// Register `affiliate` with a unique referral `code_hash`.
+    ///
+    /// - Only the organizer may add affiliates.
+    /// - Each `code_hash` can only be owned by one affiliate.
+    /// - An affiliate address can hold only one code; re-registering the same
+    ///   affiliate with a new code replaces the old mapping.
+    pub fn register_affiliate(env: Env, affiliate: Address, code_hash: BytesN<32>) {
+        let organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+        organizer.require_auth();
+
+        // Ensure the code is not already owned by a *different* affiliate.
+        if let Some(existing_owner) = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::ReferralCodeOwner(code_hash.clone()))
+        {
+            if existing_owner != affiliate {
+                panic_with_error!(&env, CrowdfundError::ReferralCodeAlreadyTaken);
+            }
+        }
+
+        let commission_bps: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AffiliateCommissionBps)
+            .unwrap_or(0);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReferralCodeOwner(code_hash.clone()), &affiliate);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AffiliateCode(affiliate.clone()), &code_hash);
+
+        AffiliateRegisteredEvent {
+            affiliate,
+            code_hash,
+            commission_bps,
+        }
+        .publish(&env);
+    }
+
+    /// Contribute `amount` tokens through a referral link identified by
+    /// `code_hash`. Behaves like `contribute` but additionally:
+    ///
+    /// 1. Validates the referral code and that the contributor has not already
+    ///    used a code for this campaign.
+    /// 2. Pays the affiliate's commission (based on `AffiliateCommissionBps`)
+    ///    from the campaign pool immediately after the contribution is recorded.
+    /// 3. Increments the referral count and cumulative earnings for that code.
+    pub fn contribute_with_referral(
+        env: Env,
+        contributor: Address,
+        amount: i128,
+        code_hash: BytesN<32>,
+    ) {
+        contributor.require_auth();
+
+        if amount <= 0 {
+            panic_with_error!(&env, CrowdfundError::InvalidAmount);
+        }
+
+        let deadline: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Deadline)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        if env.ledger().timestamp() > deadline {
+            panic_with_error!(&env, CrowdfundError::CampaignEnded);
+        }
+
+        // Validate referral code.
+        let affiliate: Address = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::ReferralCodeOwner(code_hash.clone()))
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::ReferralCodeNotFound));
+
+        // Each contributor may use at most one referral code per campaign.
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::PledgeReferral(contributor.clone()))
+        {
+            panic_with_error!(&env, CrowdfundError::ReferralAlreadyUsed);
+        }
+
+        let token_addr: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Token)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        let contract_addr = env.current_contract_address();
+        token::TokenClient::new(&env, &token_addr)
+            .transfer(&contributor, &contract_addr, &amount);
+
+        let new_raised = Self::apply_pledge_with_matching(&env, contributor.clone(), amount);
+
+        // Record that this contributor used this code.
+        env.storage()
+            .persistent()
+            .set(&DataKey::PledgeReferral(contributor.clone()), &code_hash);
+
+        // Increment referral count for this code.
+        let count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ReferralCount(code_hash.clone()))
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ReferralCount(code_hash.clone()), &(count + 1));
+
+        // Calculate and immediately pay commission from campaign balance.
+        let commission_bps: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AffiliateCommissionBps)
+            .unwrap_or(0);
+
+        let commission_amount: i128 = if commission_bps > 0 {
+            amount * (commission_bps as i128) / 10_000
+        } else {
+            0
+        };
+
+        if commission_amount > 0 {
+            token::TokenClient::new(&env, &token_addr)
+                .transfer(&contract_addr, &affiliate, &commission_amount);
+
+            // Reduce the raised counter so the commission is not counted
+            // as funds the organizer can withdraw.
+            let current_raised: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Raised)
+                .unwrap_or(0);
+            env.storage()
+                .persistent()
+                .set(&DataKey::Raised, &current_raised.saturating_sub(commission_amount));
+
+            // Accumulate affiliate earnings.
+            let prev_earnings: i128 = env
+                .storage()
+                .persistent()
+                .get(&DataKey::ReferralEarnings(code_hash.clone()))
+                .unwrap_or(0);
+            env.storage().persistent().set(
+                &DataKey::ReferralEarnings(code_hash.clone()),
+                &prev_earnings.saturating_add(commission_amount),
+            );
+        }
+
+        ReferralUsedEvent {
+            contributor: contributor.clone(),
+            affiliate,
+            code_hash,
+            contribution_amount: amount,
+            commission_amount,
+        }
+        .publish(&env);
+
+        Self::track_contributor(&env, contributor);
+        Self::check_stretch_goals(&env, new_raised);
+    }
+
+    /// Returns the number of unique contributors who used the given referral code.
+    pub fn get_referral_count(env: Env, code_hash: BytesN<32>) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ReferralCount(code_hash))
+            .unwrap_or(0)
+    }
+
+    /// Returns the total commission (in token base units) earned by the
+    /// affiliate who owns the given referral code.
+    pub fn get_referral_earnings(env: Env, code_hash: BytesN<32>) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ReferralEarnings(code_hash))
+            .unwrap_or(0)
+    }
+
+    /// Returns the referral code hash registered for the given affiliate address,
+    /// or `None` if the address has not been registered as an affiliate.
+    pub fn get_referral_code(env: Env, affiliate: Address) -> Option<BytesN<32>> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::AffiliateCode(affiliate))
+    }
+
+    /// Returns the referral code hash used by a contributor, or `None` if the
+    /// contributor did not use a referral code for this campaign.
+    pub fn get_contributor_referral(env: Env, contributor: Address) -> Option<BytesN<32>> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PledgeReferral(contributor))
+    }
+
+    /// Returns the affiliate commission rate configured for this campaign, in
+    /// basis points (0 if not set).
+    pub fn get_affiliate_commission_bps(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::AffiliateCommissionBps)
+            .unwrap_or(0)
+    }
+
+    /// Withdraw funds to the organizer after deadline if goal was met (#303).
     pub fn execute_campaign(env: Env) {
         let organizer: Address = env
             .storage()
@@ -1028,6 +1325,243 @@ impl CrowdfundContract {
             .persistent()
             .get(&DataKey::Pledge(contributor))
             .unwrap_or(0)
+    }
+
+    // ── Social recovery (#366) ────────────────────────────────────────────────
+
+    /// Configure (or replace) the guardian set and approval threshold used for
+    /// social recovery of the organizer account. Organizer-only. Replacing the
+    /// guardian set while a recovery is pending is rejected to avoid a
+    /// guardian being silently dropped mid-vote.
+    pub fn set_guardians(env: Env, organizer: Address, guardians: Vec<Address>, threshold: u32) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        if env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::RecoveryAlreadyPending);
+        }
+
+        if threshold == 0 || threshold > guardians.len() {
+            panic_with_error!(&env, CrowdfundError::InvalidThreshold);
+        }
+
+        for i in 0..guardians.len() {
+            let g = guardians.get(i).unwrap();
+            for j in (i + 1)..guardians.len() {
+                if g == guardians.get(j).unwrap() {
+                    panic_with_error!(&env, CrowdfundError::DuplicateGuardian);
+                }
+            }
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Guardians, &guardians);
+        env.storage()
+            .persistent()
+            .set(&DataKey::GuardianThreshold, &threshold);
+
+        GuardiansSetEvent {
+            organizer,
+            guardian_count: guardians.len(),
+            threshold,
+        }
+        .publish(&env);
+    }
+
+    /// A guardian nominates a new organizer address and casts the first
+    /// approval. Fails if a recovery is already pending. If the threshold is
+    /// 1, this immediately executes the recovery.
+    pub fn initiate_recovery(env: Env, guardian: Address, new_organizer: Address) {
+        guardian.require_auth();
+        Self::require_guardian(&env, &guardian);
+
+        if env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::RecoveryAlreadyPending);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryNominee, &new_organizer);
+
+        RecoveryInitiatedEvent {
+            initiator: guardian.clone(),
+            nominee: new_organizer,
+        }
+        .publish(&env);
+
+        Self::record_approval_and_maybe_execute(&env, guardian);
+    }
+
+    /// A guardian approves the pending recovery. Once the configured
+    /// threshold of approvals is reached, the recovery executes immediately
+    /// and the nominee becomes the new organizer.
+    pub fn approve_recovery(env: Env, guardian: Address) {
+        guardian.require_auth();
+        Self::require_guardian(&env, &guardian);
+
+        if !env.storage().persistent().has(&DataKey::RecoveryNominee) {
+            panic_with_error!(&env, CrowdfundError::NoPendingRecovery);
+        }
+
+        Self::record_approval_and_maybe_execute(&env, guardian);
+    }
+
+    fn record_approval_and_maybe_execute(env: &Env, guardian: Address) {
+        let approval_key = DataKey::RecoveryApproval(guardian.clone());
+        if env
+            .storage()
+            .persistent()
+            .get(&approval_key)
+            .unwrap_or(false)
+        {
+            panic_with_error!(env, CrowdfundError::AlreadyApprovedRecovery);
+        }
+        env.storage().persistent().set(&approval_key, &true);
+
+        let threshold: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::GuardianThreshold)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::GuardiansNotSet));
+
+        let approvals: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RecoveryApprovalCount)
+            .unwrap_or(0)
+            + 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::RecoveryApprovalCount, &approvals);
+
+        RecoveryApprovedEvent {
+            guardian,
+            approvals,
+            threshold,
+        }
+        .publish(env);
+
+        if approvals >= threshold {
+            let nominee: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::RecoveryNominee)
+                .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NoPendingRecovery));
+            let old_organizer: Address = env
+                .storage()
+                .persistent()
+                .get(&DataKey::Organizer)
+                .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::NotInitialized));
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Organizer, &nominee);
+
+            Self::clear_pending_recovery(env);
+
+            RecoveryExecutedEvent {
+                old_organizer,
+                new_organizer: nominee,
+            }
+            .publish(env);
+        }
+    }
+
+    /// The current organizer can cancel a pending recovery (e.g. if it was
+    /// not actually compromised). Requires organizer auth so a quorum of
+    /// guardians cannot be silently overridden by anyone else.
+    pub fn cancel_recovery(env: Env, organizer: Address) {
+        let stored_organizer: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Organizer)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NotInitialized));
+
+        if organizer != stored_organizer {
+            panic_with_error!(&env, CrowdfundError::NotInitialized);
+        }
+        organizer.require_auth();
+
+        let nominee: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RecoveryNominee)
+            .unwrap_or_else(|| panic_with_error!(&env, CrowdfundError::NoPendingRecovery));
+
+        Self::clear_pending_recovery(&env);
+
+        RecoveryCancelledEvent { organizer, nominee }.publish(&env);
+    }
+
+    pub fn get_guardians(env: Env) -> Vec<Address> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    pub fn get_guardian_threshold(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::GuardianThreshold)
+            .unwrap_or(0)
+    }
+
+    pub fn is_guardian(env: Env, address: Address) -> bool {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(&env));
+        guardians.iter().any(|g| g == address)
+    }
+
+    pub fn get_pending_recovery(env: Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::RecoveryNominee)
+    }
+
+    pub fn get_recovery_approval_count(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::RecoveryApprovalCount)
+            .unwrap_or(0)
+    }
+
+    fn require_guardian(env: &Env, guardian: &Address) {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| panic_with_error!(env, CrowdfundError::GuardiansNotSet));
+        if !guardians.iter().any(|g| &g == guardian) {
+            panic_with_error!(env, CrowdfundError::NotGuardian);
+        }
+    }
+
+    fn clear_pending_recovery(env: &Env) {
+        let guardians: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Guardians)
+            .unwrap_or_else(|| Vec::new(env));
+        for guardian in guardians.iter() {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::RecoveryApproval(guardian));
+        }
+        env.storage().persistent().remove(&DataKey::RecoveryNominee);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::RecoveryApprovalCount);
     }
 
     // ── Read-only accessors ───────────────────────────────────────────────────

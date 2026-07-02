@@ -52,6 +52,16 @@ pub enum CrowdfundError {
     InsufficientMatchingPool = 26,
     // Pledge comment exceeds the configured maximum length.
     CommentTooLong = 27,
+    // The caller is not registered as an affiliate for this campaign.
+    AffiliateNotRegistered = 28,
+    // This referral code has already been registered by another affiliate.
+    ReferralCodeAlreadyTaken = 29,
+    // Commission basis points must be in the range 0–10_000 (0–100%).
+    InvalidCommissionBps = 30,
+    // No affiliate is registered with the supplied referral code.
+    ReferralCodeNotFound = 31,
+    // This contributor has already used a referral code for this campaign.
+    ReferralAlreadyUsed = 32,
     // Caller is not authorized for this privileged view (organizer only).
     NotAuthorized = 28,
     // The backer already holds this badge.

@@ -7,6 +7,7 @@
     upgrade as upgrade_component, history as history_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
+    history as history_component, escrow as escrow_component,
 };
 use crate::errors::ContractError;
 use crate::events;
@@ -247,6 +248,11 @@ impl ShadeTrait for Shade {
         invoice_component::refund_invoice(&env, &merchant, invoice_id);
     }
 
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
+
     fn set_merchant_key(env: Env, merchant: Address, key: BytesN<32>) {
         merchant_component::set_merchant_key(&env, &merchant, &key);
     }
@@ -303,6 +309,51 @@ impl ShadeTrait for Shade {
 
     fn calculate_fee(env: Env, merchant: Address, token: Address, amount: i128) -> i128 {
         admin_component::calculate_fee(&env, &merchant, &token, amount)
+    }
+
+    fn compute_platform_fee_split(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+    ) -> PlatformFeeSplit {
+        platform_fee_component::compute_split(&env, &merchant, &token, amount)
+    }
+
+    fn set_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+        fee_bps: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::set_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+            fee_bps,
+        );
+    }
+
+    fn get_merchant_platform_fee(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        platform_fee_component::get_merchant_platform_fee(&env, merchant_id, &token)
+    }
+
+    fn clear_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::clear_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+        );
     }
 
     fn get_merchant_volume(env: Env, merchant: Address, token: Address) -> i128 {
@@ -993,5 +1044,139 @@ impl ShadeTrait for Shade {
 
     fn find_merchant_id(env: Env, address: Address) -> u64 {
         search_component::find_merchant_id(&env, &address).unwrap_or(0)
+    }
+
+    // ── Pledge / crowdfund campaign system ────────────────────────────────────
+
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        goal: i128,
+        token: Address,
+        deadline: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::create_campaign(&env, &merchant, &title, goal, &token, deadline)
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        pledge_component::get_campaign(&env, campaign_id)
+    }
+
+    fn pledge(
+        env: Env,
+        contributor: Address,
+        campaign_id: u64,
+        amount: i128,
+        token: Address,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::pledge(&env, &contributor, campaign_id, amount, &token)
+    }
+
+    fn execute_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::execute_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn cancel_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::cancel_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn claim_refund(env: Env, contributor: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::claim_refund(&env, &contributor, campaign_id);
+    }
+
+    fn batch_refund(env: Env, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        pledge_component::batch_refund(&env, campaign_id);
+    }
+
+    fn get_pledge(env: Env, pledge_id: u64) -> Pledge {
+        pledge_component::get_pledge(&env, pledge_id)
+    }
+
+    fn get_campaign_pledges(env: Env, campaign_id: u64) -> Vec<Pledge> {
+        pledge_component::get_campaign_pledges(&env, campaign_id)
+    }
+
+    fn get_contributor_pledges(env: Env, contributor: Address) -> Vec<Pledge> {
+        pledge_component::get_contributor_pledges(&env, &contributor)
+    }
+
+    // ── Campaign announcements (Issue #335) ───────────────────────────────────
+
+    fn create_campaign(
+        env: Env,
+        merchant: Address,
+        title: String,
+        description: String,
+        goal_amount: i128,
+        token: Address,
+        end_date: u64,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::create_campaign(
+            &env,
+            &merchant,
+            &title,
+            &description,
+            goal_amount,
+            &token,
+            end_date,
+        )
+    }
+
+    fn get_campaign(env: Env, campaign_id: u64) -> Campaign {
+        campaign_component::get_campaign(&env, campaign_id)
+    }
+
+    fn get_merchant_campaigns(env: Env, merchant: Address) -> Vec<u64> {
+        campaign_component::get_merchant_campaigns(&env, &merchant)
+    }
+
+    fn update_campaign(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        description: String,
+        end_date: u64,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::update_campaign(&env, &merchant, campaign_id, &title, &description, end_date);
+    }
+
+    fn cancel_campaign(env: Env, caller: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::cancel_campaign(&env, &caller, campaign_id);
+    }
+
+    fn end_campaign(env: Env, merchant: Address, campaign_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::end_campaign(&env, &merchant, campaign_id);
+    }
+
+    fn post_campaign_announcement(
+        env: Env,
+        merchant: Address,
+        campaign_id: u64,
+        title: String,
+        content: String,
+    ) -> u64 {
+        pausable_component::assert_not_paused(&env);
+        campaign_component::post_campaign_announcement(&env, &merchant, campaign_id, &title, &content)
+    }
+
+    fn get_campaign_announcements(env: Env, campaign_id: u64) -> Vec<CampaignAnnouncement> {
+        campaign_component::get_campaign_announcements(&env, campaign_id)
+    }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
     }
 }
