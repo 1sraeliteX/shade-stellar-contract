@@ -49,6 +49,31 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Campaign categories & tagging system (#352) ---
+    /// A predefined campaign category created by the admin.
+    CampaignCategory(u64),
+    /// Total number of campaign categories ever created (never decreases).
+    CampaignCategoryCount,
+    /// Name -> category_id, used to enforce unique category names.
+    CampaignCategoryName(String),
+    /// A free-form campaign tag created by a merchant.
+    CampaignTag(u64),
+    /// Total number of campaign tags ever created (never decreases).
+    CampaignTagCount,
+    /// Name -> tag_id, used to enforce unique tag names.
+    CampaignTagName(String),
+    /// A marketing/fundraising campaign registered by a merchant.
+    Campaign(u64),
+    /// Total number of campaigns ever created (never decreases).
+    CampaignCount,
+    /// Reverse index: category_id -> ordered list of campaign IDs.
+    CategoryCampaigns(u64),
+    /// Reverse index: tag_id -> ordered list of campaign IDs.
+    TagCampaigns(u64),
+    /// Reverse index: merchant_id -> ordered list of campaign IDs.
+    MerchantCampaigns(u64),
+    /// Reverse index: campaign_id -> ordered list of attached tag IDs.
+    CampaignTagList(u64),
     // --- Cross-chain pledge system ---
     CrossChainPledge(u64),
     CrossChainPledgeCount,
@@ -539,6 +564,27 @@ pub struct PaymentPayload {
     pub max_slippage_bps: Option<u32>,
 }
 
+// ── Campaign categories & tagging (#352) ──────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignCategory {
+    pub id: u64,
+    pub name: String,
+    pub description: String,
+    pub active: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignTag {
+    pub id: u64,
+    pub name: String,
+    pub creator: Address,
+    pub timestamp: u64,
+}
+
 // ── Multi-sig massive withdrawal ──────────────────────────────────────────────
 
 /// Current lifecycle state of a withdrawal proposal.
@@ -681,18 +727,27 @@ pub struct MerchantPage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Campaign {
     pub id: u64,
-    pub owner: Address,
-    pub name: String,
-    pub charity: bool,
-    pub fee_waiver_bps: u32,
-    pub discount_bps: u32,
-    pub stake_required: i128,
-    pub total_raised: i128,
-    pub total_staked: i128,
-    pub total_slashed: i128,
-    pub total_commissions_paid: i128,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub title: String,
+    pub description: String,
+    pub category_id: u64,
+    pub tags: Vec<u64>,
+    pub goal_amount: i128,
+    pub token: Address,
+    pub deadline: u64,
+    pub raised_amount: i128,
     pub active: bool,
     pub created_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignFilter {
+    pub is_active: Option<bool>,
+    pub category_id: Option<u64>,
+    pub tag_id: Option<u64>,
+    pub merchant_id: Option<u64>,
 }
 
 /// Singleton governance configuration and counters. `voting_period == 0` is the

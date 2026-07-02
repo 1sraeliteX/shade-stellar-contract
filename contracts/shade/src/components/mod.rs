@@ -2,6 +2,7 @@
 pub mod account_factory;
 pub mod admin;
 pub mod auto_withdrawal;
+pub mod campaigns;
 pub mod bridge;
 pub mod core;
 pub mod event;
