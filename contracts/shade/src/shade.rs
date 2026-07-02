@@ -1226,4 +1226,9 @@ impl ShadeTrait for Shade {
     fn get_campaign_announcements(env: Env, campaign_id: u64) -> Vec<CampaignAnnouncement> {
         campaign_component::get_campaign_announcements(&env, campaign_id)
     }
+
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64) {
+        pausable_component::assert_not_paused(&env);
+        invoice_component::claim_refund(&env, &buyer, invoice_id);
+    }
 }
