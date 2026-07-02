@@ -4,7 +4,8 @@ mod errors;
 
 use crate::errors::FactoryError;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN, Env, IntoVal, Symbol, Vec,
+    contract, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN, Env, IntoVal,
+    Symbol, Vec,
 };
 
 #[derive(Clone)]
@@ -46,14 +47,22 @@ impl EscrowFactoryContract {
             .set(&DataKey::Escrows, &Vec::<Address>::new(&env));
     }
 
-    pub fn deploy_escrow(env: Env, buyer: Address, seller: Address, required_amount: i128) -> Address {
+    pub fn deploy_escrow(
+        env: Env,
+        buyer: Address,
+        seller: Address,
+        required_amount: i128,
+    ) -> Address {
         let wasm_hash = get_escrow_wasm_hash(&env);
         let random: BytesN<32> = env.prng().gen();
         let salt = env
             .crypto()
             .keccak256(&Bytes::from_slice(&env, &random.to_array()));
 
-        let escrow_address = env.deployer().with_current_contract(salt).deploy_v2(wasm_hash, ());
+        let escrow_address = env
+            .deployer()
+            .with_current_contract(salt)
+            .deploy_v2(wasm_hash, ());
 
         env.invoke_contract::<()>(
             &escrow_address,

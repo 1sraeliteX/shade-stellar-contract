@@ -1,10 +1,12 @@
 use crate::types::{
-    Campaign, CampaignAnnouncement, CrossChainBridgePayload, Event, Invoice, InvoiceFilter,
-    Merchant, MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, OracleConfig,
-    PaymentPayload, PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics,
-    Transaction,
+    CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction, Escrow
+    BackerCampaign, BackerPerk, BackerRewardTier, CrossChainBridgePayload, Event, Invoice, InvoiceFilter, Merchant,
+    MerchantAnalytics, MerchantAnalyticsSummary, MerchantFilter, Nft, NftCollection, OracleConfig, PaymentPayload,
+    PendingFee, Role, Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
 };
-use soroban_sdk::{contracttrait, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contracttrait, Address, BytesN, Env, Option, String, Vec};
 
 #[contracttrait]
 pub trait ShadeTrait {
@@ -96,6 +98,11 @@ pub trait ShadeTrait {
     fn get_merchant_analytics_summary(env: Env, merchant: Address) -> MerchantAnalyticsSummary;
     fn set_merchant_account(env: Env, merchant: Address, account: Address);
     fn get_merchant_account(env: Env, merchant_id: u64) -> Address;
+    fn set_auto_withdrawal_threshold(env: Env, merchant: Address, token: Address, threshold: i128);
+    fn get_auto_withdrawal_threshold(env: Env, merchant_id: u64, token: Address) -> Option<i128>;
+    fn set_auto_withdrawal_recipient(env: Env, merchant: Address, recipient: Address);
+    fn get_auto_withdrawal_recipient(env: Env, merchant_id: u64) -> Option<Address>;
+    fn claim_refund(env: Env, buyer: Address, invoice_id: u64);
     fn pay_invoice(env: Env, payer: Address, invoice_id: u64);
     fn pay_invoices_batch(env: Env, payer: Address, invoice_ids: Vec<u64>);
     fn pay_invoice_partial(env: Env, payer: Address, invoice_id: u64, amount: i128);
@@ -166,11 +173,75 @@ pub trait ShadeTrait {
     fn get_user_transactions(env: Env, user: Address) -> Vec<Transaction>;
 
     // ── Cross-chain bridge placeholder ───────────────────────────────────────
-    fn emit_bridge_placeholder(
+    fn emit_bridge_placeholder(env: Env, caller: Address, payload: CrossChainBridgePayload);
+
+    // ── Bridge listener / external deposits ──────────────────────────────────
+
+    /// Register an authorized bridge listener (relayer). Admin only.
+    fn register_bridge_listener(env: Env, admin: Address, listener: Address);
+
+    /// Revoke a bridge listener's authorization. Admin only.
+    fn remove_bridge_listener(env: Env, admin: Address, listener: Address);
+
+    /// Whether `listener` is a currently registered bridge listener.
+    fn is_bridge_listener(env: Env, listener: Address) -> bool;
+
+    /// Record a confirmed external-chain deposit. Callable only by a registered
+    /// bridge listener. De-duplicated on `source_tx_id`. Returns the deposit id.
+    fn record_bridge_deposit(
         env: Env,
-        caller: Address,
-        payload: CrossChainBridgePayload,
-    );
+        listener: Address,
+        source_chain: String,
+        source_tx_id: BytesN<32>,
+        token: Address,
+        amount: i128,
+        recipient: Address,
+    ) -> u64;
+
+    /// Fetch a recorded external deposit by id, or `None` if it does not exist.
+    fn get_bridge_deposit(env: Env, deposit_id: u64) -> Option<BridgeDeposit>;
+
+    /// Whether an origin-chain transaction hash has already been credited.
+    fn is_bridge_deposit_processed(env: Env, source_tx_id: BytesN<32>) -> bool;
+
+    /// Total number of external deposits recorded so far.
+    fn get_bridge_deposit_count(env: Env) -> u64;
+
+    /// Cumulative amount credited to `recipient` for `token` via the bridge.
+    fn get_bridge_credit(env: Env, recipient: Address, token: Address) -> i128;
+
+    // ── DAO governance for protocol upgrades ─────────────────────────────────
+
+    /// Register a governance council member. Admin only; idempotent.
+    fn add_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Revoke a governance council member. Admin only; idempotent.
+    fn remove_gov_member(env: Env, admin: Address, member: Address);
+
+    /// Whether `member` is a current governance council member.
+    fn is_gov_member(env: Env, member: Address) -> bool;
+
+    /// Number of governance council members.
+    fn get_gov_member_count(env: Env) -> u32;
+
+    /// Configure the voting window (seconds) and approval quorum (bps). Admin only.
+    fn set_governance_config(env: Env, admin: Address, voting_period: u64, quorum_bps: u32);
+
+    /// Open an upgrade proposal for the given WASM hash. Member only. Returns id.
+    fn propose_upgrade(env: Env, proposer: Address, wasm_hash: BytesN<32>) -> u64;
+
+    /// Cast a vote on an active proposal within its window. Member only.
+    fn vote_on_upgrade(env: Env, voter: Address, proposal_id: u64, approve: bool);
+
+    /// Finalize a proposal after voting closes: apply the upgrade if it passed,
+    /// otherwise mark it defeated. Member only.
+    fn finalize_upgrade(env: Env, caller: Address, proposal_id: u64);
+
+    /// Fetch an upgrade proposal by id, or `None` if it does not exist.
+    fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Option<UpgradeProposal>;
+
+    /// Whether `member` has already voted on the given proposal.
+    fn has_voted_on_upgrade(env: Env, proposal_id: u64, member: Address) -> bool;
 
     // --- Event ticketing system ---
     #[allow(clippy::too_many_arguments)]
@@ -195,13 +266,7 @@ pub trait ShadeTrait {
     );
     fn get_current_ticket_price(env: Env, event_id: u64) -> i128;
     fn cancel_event_and_batch_refund(env: Env, merchant: Address, event_id: u64);
-    fn resell_ticket(
-        env: Env,
-        seller: Address,
-        buyer: Address,
-        ticket_id: u64,
-        resale_price: i128,
-    );
+    fn resell_ticket(env: Env, seller: Address, buyer: Address, ticket_id: u64, resale_price: i128);
     fn get_event(env: Env, event_id: u64) -> Event;
     fn get_ticket(env: Env, ticket_id: u64) -> Ticket;
     fn get_event_tickets(env: Env, event_id: u64) -> Vec<u64>;
@@ -236,55 +301,136 @@ pub trait ShadeTrait {
     /// Get market share of a token as basis points (10000 = 100%)
     fn get_token_market_share(env: Env, token: Address) -> i128;
 
-    // ── Campaign announcements (Issue #335) ───────────────────────────────────
-
-    /// Create an on-chain campaign for a registered, active merchant.
-    /// `goal_amount` is in token base units; pass 0 for open-ended campaigns.
-    /// `end_date` must be a future ledger timestamp.
-    fn create_campaign(
+    /// Create an escrow for physical goods
+    fn create_escrow(
         env: Env,
-        merchant: Address,
-        title: String,
-        description: String,
-        goal_amount: i128,
+        seller: Address,
+        buyer: Address,
         token: Address,
-        end_date: u64,
+        amount: i128,
+        invoice_id: Option<u64>,
     ) -> u64;
 
-    /// Fetch the full Campaign struct by ID.
-    fn get_campaign(env: Env, campaign_id: u64) -> Campaign;
+    /// Get an escrow by ID
+    fn get_escrow(env: Env, escrow_id: u64) -> Escrow;
 
-    /// Return the ordered list of campaign IDs belonging to a merchant.
-    fn get_merchant_campaigns(env: Env, merchant: Address) -> Vec<u64>;
+    /// Fund an escrow
+    fn fund_escrow(env: Env, buyer: Address, escrow_id: u64);
 
-    /// Update mutable campaign fields (title, description, end_date).
-    /// Only the campaign's owning merchant may call this.
-    fn update_campaign(
+    /// Release escrow to seller
+    fn release_escrow(env: Env, buyer: Address, escrow_id: u64);
+
+    /// Refund escrow to buyer (called by seller)
+    fn refund_escrow(env: Env, seller: Address, escrow_id: u64);
+    // ── NFT minting & distribution ────────────────────────────────────────────
+
+    /// Create a new NFT collection for crowdfunding rewards. Only the merchant can call this.
+    fn create_nft_collection(
+        env: Env,
+        merchant: Address,
+        name: String,
+        base_uri: String,
+        max_supply: u64,
+        royalty_bps: u32,
+    ) -> u64;
+
+    /// Mint a single NFT from a collection to a recipient (backer reward).
+    fn mint_nft(
+        env: Env,
+        merchant: Address,
+        collection_id: u64,
+        recipient: Address,
+        token_uri: String,
+    ) -> u64;
+
+    /// Mint NFTs to multiple backers in one call.
+    fn batch_mint_nfts(
+        env: Env,
+        merchant: Address,
+        collection_id: u64,
+        recipients: Vec<Address>,
+        token_uris: Vec<String>,
+    ) -> Vec<u64>;
+
+    /// Transfer an NFT from one address to another.
+    fn transfer_nft(env: Env, from: Address, to: Address, nft_id: u64);
+
+    /// Burn (permanently destroy) an NFT. Only the owner can do this.
+    fn burn_nft(env: Env, owner: Address, nft_id: u64);
+
+    /// Claim a reward NFT assigned to the caller.
+    fn claim_nft_reward(env: Env, claimer: Address, nft_id: u64);
+
+    /// Deactivate a collection so no further minting is possible.
+    fn deactivate_nft_collection(env: Env, merchant: Address, collection_id: u64);
+
+    /// Fetch a collection by ID.
+    fn get_nft_collection(env: Env, collection_id: u64) -> NftCollection;
+
+    /// Fetch a single NFT by its global token ID.
+    fn get_nft(env: Env, nft_id: u64) -> Nft;
+
+    /// List all token IDs belonging to a collection.
+    fn get_collection_nfts(env: Env, collection_id: u64) -> Vec<u64>;
+
+    /// List all NFT IDs owned by a user.
+    fn get_user_nfts(env: Env, user: Address) -> Vec<u64>;
+}
+    // ── Backer rewards (crowdfunding tiers & perks) ───────────────────────────
+
+    /// Create a crowdfunding campaign for tiered backer rewards.
+    fn create_backer_campaign(
+        env: Env,
+        merchant: Address,
+        name: String,
+        token: Address,
+        deadline: u64,
+    ) -> u64;
+
+    fn get_backer_campaign(env: Env, campaign_id: u64) -> BackerCampaign;
+
+    /// Define reward tiers with perks. Tiers must have ascending `min_pledge`.
+    fn set_backer_reward_tiers(
         env: Env,
         merchant: Address,
         campaign_id: u64,
-        title: String,
-        description: String,
-        end_date: u64,
+        tiers: Vec<BackerRewardTier>,
     );
 
-    /// Cancel an active campaign.
-    /// Either the campaign's merchant or the contract admin may cancel.
-    fn cancel_campaign(env: Env, caller: Address, campaign_id: u64);
+    fn get_backer_reward_tiers(env: Env, campaign_id: u64) -> Vec<BackerRewardTier>;
 
-    /// Mark an active campaign as ended (successfully closed by the merchant).
-    fn end_campaign(env: Env, merchant: Address, campaign_id: u64);
+    /// Record a backer pledge to a campaign.
+    fn pledge_to_campaign(env: Env, backer: Address, campaign_id: u64, amount: i128);
 
-    /// Post a new update announcement on an active campaign.
-    /// Returns the global announcement ID.
-    fn post_campaign_announcement(
+    fn get_backer_pledge(env: Env, campaign_id: u64, backer: Address) -> i128;
+
+    /// Select a reward tier. Backer's total pledge must meet the tier minimum.
+    fn select_backer_reward_tier(
+        env: Env,
+        backer: Address,
+        campaign_id: u64,
+        tier_index: u32,
+    );
+
+    fn get_backer_selected_tier(env: Env, campaign_id: u64, backer: Address) -> Option<u32>;
+
+    /// Mark a backer's reward as fulfilled. Merchant-only.
+    fn fulfill_backer_reward(
         env: Env,
         merchant: Address,
         campaign_id: u64,
-        title: String,
-        content: String,
-    ) -> u64;
+        backer: Address,
+    );
 
-    /// Return all announcements posted on a campaign in chronological order.
-    fn get_campaign_announcements(env: Env, campaign_id: u64) -> Vec<CampaignAnnouncement>;
+    fn is_backer_reward_fulfilled(env: Env, campaign_id: u64, backer: Address) -> bool;
+
+    /// Claim a perk from the backer's selected tier after fulfillment.
+    fn claim_backer_perk(env: Env, backer: Address, campaign_id: u64, perk_index: u32);
+
+    fn is_backer_perk_claimed(
+        env: Env,
+        campaign_id: u64,
+        backer: Address,
+        perk_index: u32,
+    ) -> bool;
 }
