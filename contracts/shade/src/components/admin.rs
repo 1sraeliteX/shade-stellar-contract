@@ -1,4 +1,4 @@
-use crate::components::{core, reentrancy};
+use crate::components::{core, platform_fee, reentrancy};
 use crate::errors::ContractError;
 use crate::events;
 use crate::types::{
@@ -187,15 +187,7 @@ pub fn get_token_oracle(env: &Env, token: &Address) -> OracleConfig {
 }
 
 pub fn calculate_fee(env: &Env, merchant: &Address, token: &Address, amount: i128) -> i128 {
-    let fee_bps: i128 = get_fee(env, token);
-    if fee_bps == 0 {
-        return 0;
-    }
-
-    let volume = get_merchant_volume(env, merchant, token);
-    let discounted_bps = apply_volume_discount(fee_bps, volume);
-
-    (amount * discounted_bps) / 10_000i128
+    platform_fee::compute_split(env, merchant, token, amount).platform_fee
 }
 
 pub fn get_merchant_volume(env: &Env, merchant: &Address, token: &Address) -> i128 {
@@ -379,24 +371,6 @@ pub fn get_token_market_share(env: &Env, token: &Address) -> i128 {
 
     // Return market share as basis points (10000 = 100%)
     (token_volume * 10000) / total_volume
-}
-
-fn apply_volume_discount(fee_bps: i128, volume: i128) -> i128 {
-    let discount_percentage = if volume >= 200_000 {
-        50 // 50% discount
-    } else if volume >= 50_000 {
-        25 // 25% discount
-    } else if volume >= 10_000 {
-        10 // 10% discount
-    } else {
-        0
-    };
-
-    if discount_percentage == 0 {
-        fee_bps
-    } else {
-        (fee_bps * (100 - discount_percentage)) / 100
-    }
 }
 
 pub fn propose_fee(env: &Env, admin: &Address, token: &Address, fee: i128) {

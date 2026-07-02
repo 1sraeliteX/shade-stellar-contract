@@ -36,6 +36,7 @@ pub mod test_merchant_webhook;
 pub mod test_pausable;
 pub mod test_payment;
 pub mod test_payment_payload;
+pub mod test_platform_fee;
 pub mod test_querying;
 pub mod test_reentrancy;
 pub mod test_refund;

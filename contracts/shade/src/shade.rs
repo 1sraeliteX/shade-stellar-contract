@@ -302,6 +302,51 @@ impl ShadeTrait for Shade {
         admin_component::calculate_fee(&env, &merchant, &token, amount)
     }
 
+    fn compute_platform_fee_split(
+        env: Env,
+        merchant: Address,
+        token: Address,
+        amount: i128,
+    ) -> PlatformFeeSplit {
+        platform_fee_component::compute_split(&env, &merchant, &token, amount)
+    }
+
+    fn set_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+        fee_bps: i128,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::set_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+            fee_bps,
+        );
+    }
+
+    fn get_merchant_platform_fee(env: Env, merchant_id: u64, token: Address) -> Option<i128> {
+        platform_fee_component::get_merchant_platform_fee(&env, merchant_id, &token)
+    }
+
+    fn clear_merchant_platform_fee(
+        env: Env,
+        caller: Address,
+        merchant_id: u64,
+        token: Address,
+    ) {
+        pausable_component::assert_not_paused(&env);
+        platform_fee_component::clear_merchant_platform_fee(
+            &env,
+            &caller,
+            merchant_id,
+            &token,
+        );
+    }
+
     fn get_merchant_volume(env: Env, merchant: Address, token: Address) -> i128 {
         admin_component::get_merchant_volume(&env, &merchant, &token)
     }
