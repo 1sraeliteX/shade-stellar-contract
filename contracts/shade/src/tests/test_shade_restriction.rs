@@ -7,9 +7,16 @@ use soroban_sdk::testutils::{Address as _, Events as _};
 use soroban_sdk::{Address, Env, Map, Symbol, TryIntoVal, Val};
 
 /// Setup the test environment and return clients and addresses.
-fn setup() -> (Env, ShadeClient<'static>, account::account::MerchantAccountClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    ShadeClient<'static>,
+    account::account::MerchantAccountClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
-    
+
     let contract_id = env.register(Shade, ());
     let client = ShadeClient::new(&env, &contract_id);
 
@@ -19,7 +26,7 @@ fn setup() -> (Env, ShadeClient<'static>, account::account::MerchantAccountClien
 
     // Initial authorization to set up the state
     env.mock_all_auths();
-    
+
     client.initialize(&admin);
     client.grant_role(&admin, &manager, &Role::Manager);
 
@@ -29,7 +36,7 @@ fn setup() -> (Env, ShadeClient<'static>, account::account::MerchantAccountClien
     // Deploy MerchantAccount (via manual registration flow simulation)
     let acct_id = env.register(account::account::MerchantAccount, ());
     let acct_client = account::account::MerchantAccountClient::new(&env, &acct_id);
-    let merchant_id_val = 1_u64; 
+    let merchant_id_val = 1_u64;
     acct_client.initialize(&merchant, &contract_id, &merchant_id_val);
 
     // Link Merchant Account in Shade
