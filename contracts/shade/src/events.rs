@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contractevent, Address, BytesN, Env, Option, String, Vec};
 
 // ── Existing events ───────────────────────────────────────────────────────────
 
@@ -548,6 +548,108 @@ pub fn publish_payment_split_routed_event(
 }
 
 #[contractevent]
+pub struct PlatformFeeRoutedEvent {
+    pub route_kind: u32,
+    pub ref_id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub merchant_account: Address,
+    pub platform_account: Address,
+    pub payer: Address,
+    pub gross_amount: i128,
+    pub platform_fee: i128,
+    pub merchant_amount: i128,
+    pub token: Address,
+    pub fee_bps_applied: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_platform_fee_routed_event(
+    env: &Env,
+    route_kind: crate::types::PlatformFeeRouteKind,
+    ref_id: u64,
+    merchant_id: u64,
+    merchant: Address,
+    merchant_account: Address,
+    platform_account: Address,
+    payer: Address,
+    gross_amount: i128,
+    platform_fee: i128,
+    merchant_amount: i128,
+    token: Address,
+    fee_bps_applied: i128,
+    timestamp: u64,
+) {
+    PlatformFeeRoutedEvent {
+        route_kind: route_kind as u32,
+        ref_id,
+        merchant_id,
+        merchant,
+        merchant_account,
+        platform_account,
+        payer,
+        gross_amount,
+        platform_fee,
+        merchant_amount,
+        token,
+        fee_bps_applied,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct MerchantPlatformFeeSetEvent {
+    pub caller: Address,
+    pub merchant_id: u64,
+    pub token: Address,
+    pub fee_bps: i128,
+    pub timestamp: u64,
+}
+
+pub fn publish_merchant_platform_fee_set_event(
+    env: &Env,
+    caller: Address,
+    merchant_id: u64,
+    token: Address,
+    fee_bps: i128,
+    timestamp: u64,
+) {
+    MerchantPlatformFeeSetEvent {
+        caller,
+        merchant_id,
+        token,
+        fee_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct MerchantPlatformFeeClearedEvent {
+    pub caller: Address,
+    pub merchant_id: u64,
+    pub token: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_merchant_platform_fee_cleared_event(
+    env: &Env,
+    caller: Address,
+    merchant_id: u64,
+    token: Address,
+    timestamp: u64,
+) {
+    MerchantPlatformFeeClearedEvent {
+        caller,
+        merchant_id,
+        token,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
 pub struct InvoiceCancelledEvent {
     pub invoice_id: u64,
     pub merchant: Address,
@@ -663,6 +765,216 @@ pub fn publish_cross_chain_pledge_created(
         amount: pledge.amount,
         timestamp: pledge.created_at,
     }
+}
+// ── Bridge listener / external deposit events ─────────────────────────────────
+
+#[contractevent]
+pub struct BridgeListenerRegisteredEvent {
+    pub admin: Address,
+    pub listener: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_bridge_listener_registered_event(
+    env: &Env,
+    admin: Address,
+    listener: Address,
+    timestamp: u64,
+) {
+    BridgeListenerRegisteredEvent {
+        admin,
+        listener,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BridgeListenerRemovedEvent {
+    pub admin: Address,
+    pub listener: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_bridge_listener_removed_event(
+    env: &Env,
+    admin: Address,
+    listener: Address,
+    timestamp: u64,
+) {
+    BridgeListenerRemovedEvent {
+        admin,
+        listener,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BridgeDepositRecordedEvent {
+    pub deposit_id: u64,
+    pub listener: Address,
+    pub source_chain: String,
+    pub source_tx_id: BytesN<32>,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_bridge_deposit_recorded_event(
+    env: &Env,
+    deposit_id: u64,
+    listener: Address,
+    source_chain: String,
+    source_tx_id: BytesN<32>,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+    timestamp: u64,
+) {
+    BridgeDepositRecordedEvent {
+        deposit_id,
+        listener,
+        source_chain,
+        source_tx_id,
+        token,
+        amount,
+        recipient,
+        timestamp,
+    }
+    .publish(env);
+}
+
+// ── DAO governance events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct GovMemberAddedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_added_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberAddedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovMemberRemovedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_removed_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberRemovedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovConfigSetEvent {
+    pub admin: Address,
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_config_set_event(
+    env: &Env,
+    admin: Address,
+    voting_period: u64,
+    quorum_bps: u32,
+    timestamp: u64,
+) {
+    GovConfigSetEvent {
+        admin,
+        voting_period,
+        quorum_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeProposedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub voting_ends_at: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposed_event(
+    env: &Env,
+    proposal_id: u64,
+    proposer: Address,
+    wasm_hash: BytesN<32>,
+    voting_ends_at: u64,
+    timestamp: u64,
+) {
+    UpgradeProposedEvent {
+        proposal_id,
+        proposer,
+        wasm_hash,
+        voting_ends_at,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeVoteCastEvent {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub approve: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_vote_cast_event(
+    env: &Env,
+    proposal_id: u64,
+    voter: Address,
+    approve: bool,
+    approvals: u32,
+    rejections: u32,
+    timestamp: u64,
+) {
+    UpgradeVoteCastEvent {
+        proposal_id,
+        voter,
+        approve,
+        approvals,
+        rejections,
+        timestamp,
+    }
     .publish(env);
 }
 
@@ -681,6 +993,36 @@ pub fn publish_cross_chain_pledge_updated(
         pledge_id: pledge.id,
         status: pledge.status.clone(),
         timestamp: pledge.updated_at,
+    }
+}
+pub struct UpgradeProposalFinalizedEvent {
+    pub proposal_id: u64,
+    pub executor: Address,
+    pub approved: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposal_finalized_event(
+    env: &Env,
+    proposal_id: u64,
+    executor: Address,
+    approved: bool,
+    approvals: u32,
+    rejections: u32,
+    member_count: u32,
+    timestamp: u64,
+) {
+    UpgradeProposalFinalizedEvent {
+        proposal_id,
+        executor,
+        approved,
+        approvals,
+        rejections,
+        member_count,
+        timestamp,
     }
     .publish(env);
 }
@@ -881,6 +1223,69 @@ pub fn publish_merchant_token_removed_event(
     .publish(env);
 }
 
+#[contractevent]
+pub struct AutoWithdrawThresholdEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
+
+pub fn publish_auto_withdrawal_threshold_set_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    threshold: i128,
+) {
+    AutoWithdrawThresholdEvent {
+        merchant_id,
+        token,
+        threshold,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawRecipientEvent {
+    pub merchant_id: u64,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_recipient_set_event(
+    env: &Env,
+    merchant_id: u64,
+    recipient: Address,
+) {
+    AutoWithdrawRecipientEvent {
+        merchant_id,
+        recipient,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawalTriggeredEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_triggered_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+) {
+    AutoWithdrawalTriggeredEvent {
+        merchant_id,
+        token,
+        amount,
+        recipient,
+    }
+    .publish(env);
+}
+
 // ── Admin transfer events ────────────────────────────────────────────────────
 
 #[contractevent]
@@ -1053,424 +1458,160 @@ pub fn publish_ticket_resold_event(
     .publish(env);
 }
 
-// ── Campaign fundraising events ─────────────────────────────────────────────
+// ── Auto-withdrawal events ─────────────────────────────────────────────────────
 
 #[contractevent]
-pub struct CampaignCreatedEvent {
-    pub campaign_id: u64,
-    pub owner: Address,
-    pub name: String,
-    pub charity: bool,
-    pub fee_waiver_bps: u32,
-    pub discount_bps: u32,
-    pub timestamp: u64,
+pub struct WithdrawalThresholdSetEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn publish_campaign_created_event(
+pub fn publish_auto_withdrawal_threshold_set_event(
     env: &Env,
-    campaign_id: u64,
-    owner: Address,
-    name: String,
-    charity: bool,
-    fee_waiver_bps: u32,
-    discount_bps: u32,
-    timestamp: u64,
+    merchant_id: u64,
+    token: Address,
+    threshold: i128,
 ) {
-    CampaignCreatedEvent {
-        campaign_id,
-        owner,
-        name,
-        charity,
-        fee_waiver_bps,
-        discount_bps,
-        timestamp,
+    WithdrawalThresholdSetEvent {
+        merchant_id,
+        token,
+        threshold,
     }
     .publish(env);
 }
 
 #[contractevent]
-pub struct CampaignFeePolicyConfiguredEvent {
-    pub campaign_id: u64,
-    pub caller: Address,
-    pub fee_waiver_bps: u32,
-    pub discount_bps: u32,
-    pub timestamp: u64,
-}
-
-pub fn publish_campaign_fee_policy_configured_event(
-    env: &Env,
-    campaign_id: u64,
-    caller: Address,
-    fee_waiver_bps: u32,
-    discount_bps: u32,
-    timestamp: u64,
-) {
-    CampaignFeePolicyConfiguredEvent {
-        campaign_id,
-        caller,
-        fee_waiver_bps,
-        discount_bps,
-  }
-}
-// NFT reward system events
-pub struct NftCollectionCreatedEvent {
-    pub collection_id: u64,
-    pub merchant_id: u64,
-    pub merchant: Address,
-    pub name: String,
-    pub base_uri: String,
-    pub max_supply: u64,
-    pub royalty_bps: u32,
-    pub timestamp: u64,
-}
-#[allow(clippy::too_many_arguments)]
-pub fn publish_nft_collection_created_event(
-    env: &Env, collection_id: u64, merchant_id: u64, merchant: Address,
-    name: String, base_uri: String, max_supply: u64, royalty_bps: u32, timestamp: u64,
-) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_col_c"),), (collection_id, merchant_id, merchant, name, base_uri, max_supply, royalty_bps, timestamp));
-}
-
-pub struct NftMintedEvent {
-    pub nft_id: u64,
-    pub collection_id: u64,
+pub struct WithdrawalRecipientSetEvent {
     pub merchant_id: u64,
     pub recipient: Address,
-    pub uri: String,
-    pub timestamp: u64,
-}
-pub fn publish_nft_minted_event(env: &Env, nft_id: u64, collection_id: u64, merchant_id: u64, recipient: Address, uri: String, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_mint"),), (nft_id, collection_id, merchant_id, recipient, uri, timestamp));
 }
 
-pub struct NftBatchMintedEvent {
-    pub collection_id: u64,
-    pub merchant_id: u64,
-    pub count: u32,
-    pub timestamp: u64,
-}
-pub fn publish_nft_batch_minted_event(env: &Env, collection_id: u64, merchant_id: u64, count: u32, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_batch"),), (collection_id, merchant_id, count, timestamp));
-}
-
-pub struct NftTransferredEvent {
-    pub nft_id: u64,
-    pub collection_id: u64,
-    pub from: Address,
-    pub to: Address,
-    pub timestamp: u64,
-}
-pub fn publish_nft_transferred_event(env: &Env, nft_id: u64, collection_id: u64, from: Address, to: Address, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_xfer"),), (nft_id, collection_id, from, to, timestamp));
-}
-
-pub struct NftBurnedEvent {
-    pub nft_id: u64,
-    pub collection_id: u64,
-    pub owner: Address,
-    pub timestamp: u64,
-}
-pub fn publish_nft_burned_event(env: &Env, nft_id: u64, collection_id: u64, owner: Address, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_burn"),), (nft_id, collection_id, owner, timestamp));
-}
-
-pub struct NftCollectionDeactivatedEvent {
-    pub collection_id: u64,
-    pub merchant: Address,
-    pub timestamp: u64,
-}
-pub fn publish_nft_collection_deactivated_event(env: &Env, collection_id: u64, merchant: Address, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_col_d"),), (collection_id, merchant, timestamp));
-}
-
-pub struct NftRewardClaimedEvent {
-    pub nft_id: u64,
-    pub collection_id: u64,
-    pub claimer: Address,
-    pub timestamp: u64,
-}
-pub fn publish_nft_reward_claimed_event(env: &Env, nft_id: u64, collection_id: u64, claimer: Address, timestamp: u64) {
-    env.events().publish((soroban_sdk::symbol_short!("nft_claim"),), (nft_id, collection_id, claimer, timestamp));
-}
-// ── Backer rewards (crowdfunding tiers & perks) ───────────────────────────────
-
-#[contractevent]
-pub struct BackerCampaignCreatedEvent {
-    pub campaign_id: u64,
-    pub merchant: Address,
-    pub merchant_id: u64,
-    pub name: String,
-    pub token: Address,
-    pub deadline: u64,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_backer_campaign_created_event(
+pub fn publish_auto_withdrawal_recipient_set_event(
     env: &Env,
-    campaign_id: u64,
-    merchant: Address,
     merchant_id: u64,
-    name: String,
-    token: Address,
-    deadline: u64,
-    timestamp: u64,
+    recipient: Address,
 ) {
-    BackerCampaignCreatedEvent {
-        campaign_id,
-        merchant,
+    WithdrawalRecipientSetEvent {
         merchant_id,
-        name,
+        recipient,
+    }
+    .publish(env);
+}
+
+/// Emitted each time a registered signer approves a proposal.
+#[contractevent]
+pub struct WithdrawalApprovedEvent {
+    pub proposal_id: u64,
+    /// Signer that cast this approval.
+    pub signer: Address,
+    /// Running approval count after this vote.
+    pub approvals_so_far: u32,
+    /// Quorum still needed (0 means ready to execute).
+    pub quorum_required: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_withdrawal_approved_event(
+    env: &Env,
+    proposal_id: u64,
+    signer: Address,
+    approvals_so_far: u32,
+    quorum_required: u32,
+    timestamp: u64,
+) {
+    WithdrawalApprovedEvent {
+        proposal_id,
+        signer,
+        approvals_so_far,
+        quorum_required,
+#[contractevent]
+pub struct AutoWithdrawalTriggeredEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_triggered_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+) {
+    AutoWithdrawalTriggeredEvent {
+        merchant_id,
         token,
-        deadline,
+        amount,
+        recipient,
+    }
+    .publish(env);
+}
+
+// ── Escrow expired-refund event ────────────────────────────────────────────────
+
+/// Emitted when a subscription plan query is executed.
+#[contractevent]
+pub struct SubscriptionPlanSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_subscription_plan_search_event(
+    env: &Env,
+    caller: Address,
+    result_count: u32,
+    timestamp: u64,
+) {
+    SubscriptionPlanSearchExecutedEvent {
+        caller,
+        result_count,
         timestamp,
     }
     .publish(env);
 }
 
+/// Emitted when an event (ticketing) query is executed.
 #[contractevent]
-pub struct CampaignContributionRecordedEvent {
-    pub campaign_id: u64,
-    pub contributor: Address,
-    pub amount: i128,
-    pub total_raised: i128,
+pub struct EventSearchExecutedEvent {
+    pub caller: Address,
+    pub result_count: u32,
     pub timestamp: u64,
 }
 
-pub fn publish_campaign_contribution_recorded_event(
+pub fn publish_event_search_executed_event(
     env: &Env,
-    campaign_id: u64,
-    contributor: Address,
-    amount: i128,
-    total_raised: i128,
+    caller: Address,
+    result_count: u32,
     timestamp: u64,
 ) {
-    CampaignContributionRecordedEvent {
-        campaign_id,
-        contributor,
-        amount,
-        total_raised,
-  }
-}
-pub struct BackerRewardTiersSetEvent {
-    pub campaign_id: u64,
-    pub merchant: Address,
-    pub tier_count: u32,
-    pub timestamp: u64,
-}
-
-pub fn publish_backer_reward_tiers_set_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant: Address,
-    tier_count: u32,
-    timestamp: u64,
-) {
-    BackerRewardTiersSetEvent {
-        campaign_id,
-        merchant,
-        tier_count,
-        timestamp,
-    }
-    .publish(env);
-}
-
+    EventSearchExecutedEvent {
+        caller,
+        result_count,
 #[contractevent]
-pub struct CampaignStakedEvent {
-    pub campaign_id: u64,
-    pub participant: Address,
+pub struct EscrowExpiredRefundEvent {
+    pub invoice_id: u64,
+    pub buyer: Address,
     pub amount: i128,
-    pub total_staked: i128,
+    pub token: Address,
     pub timestamp: u64,
 }
 
-pub fn publish_campaign_staked_event(
+pub fn publish_escrow_expired_refund_event(
     env: &Env,
-    campaign_id: u64,
-    participant: Address,
+    invoice_id: u64,
+    buyer: Address,
     amount: i128,
-    total_staked: i128,
+    token: Address,
     timestamp: u64,
 ) {
-    CampaignStakedEvent {
-        campaign_id,
-        participant,
+    EscrowExpiredRefundEvent {
+        invoice_id,
+        buyer,
         amount,
-        total_staked,
-  }
-}
-pub struct BackerPledgeRecordedEvent {
-    pub campaign_id: u64,
-    pub backer: Address,
-    pub amount: i128,
-    pub total_pledge: i128,
-    pub timestamp: u64,
-}
-
-pub fn publish_backer_pledge_recorded_event(
-    env: &Env,
-    campaign_id: u64,
-    backer: Address,
-    amount: i128,
-    total_pledge: i128,
-    timestamp: u64,
-) {
-    BackerPledgeRecordedEvent {
-        campaign_id,
-        backer,
-        amount,
-        total_pledge,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignSlashedEvent {
-    pub campaign_id: u64,
-    pub participant: Address,
-    pub amount: i128,
-    pub remaining_stake: i128,
-    pub timestamp: u64,
-}
-
-pub fn publish_campaign_slashed_event(
-    env: &Env,
-    campaign_id: u64,
-    participant: Address,
-    amount: i128,
-    remaining_stake: i128,
-    timestamp: u64,
-) {
-    CampaignSlashedEvent {
-        campaign_id,
-        participant,
-        amount,
-        remaining_stake,
-pub struct BackerRewardTierSelectedEvent {
-    pub campaign_id: u64,
-    pub backer: Address,
-    pub tier_index: u32,
-    pub min_pledge: i128,
-    pub perk_count: u32,
-    pub timestamp: u64,
-}
-
-pub fn publish_backer_reward_tier_selected_event(
-    env: &Env,
-    campaign_id: u64,
-    backer: Address,
-    tier_index: u32,
-    min_pledge: i128,
-    perk_count: u32,
-    timestamp: u64,
-) {
-    BackerRewardTierSelectedEvent {
-        campaign_id,
-        backer,
-        tier_index,
-        min_pledge,
-        perk_count,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct AffiliateRegisteredEvent {
-    pub campaign_id: u64,
-    pub affiliate: Address,
-    pub commission_bps: u32,
-    pub timestamp: u64,
-}
-
-pub fn publish_affiliate_registered_event(
-    env: &Env,
-    campaign_id: u64,
-    affiliate: Address,
-    commission_bps: u32,
-    timestamp: u64,
-) {
-    AffiliateRegisteredEvent {
-        campaign_id,
-        affiliate,
-        commission_bps,
-pub struct BackerRewardFulfilledEvent {
-    pub campaign_id: u64,
-    pub merchant: Address,
-    pub backer: Address,
-    pub tier_index: Option<u32>,
-    pub pledge: i128,
-    pub timestamp: u64,
-}
-
-pub fn publish_backer_reward_fulfilled_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant: Address,
-    backer: Address,
-    tier_index: Option<u32>,
-    pledge: i128,
-    timestamp: u64,
-) {
-    BackerRewardFulfilledEvent {
-        campaign_id,
-        merchant,
-        backer,
-        tier_index,
-        pledge,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct AffiliateCommissionPaidEvent {
-    pub campaign_id: u64,
-    pub affiliate: Address,
-    pub amount: i128,
-    pub total_paid: i128,
-    pub timestamp: u64,
-}
-
-pub fn publish_affiliate_commission_paid_event(
-    env: &Env,
-    campaign_id: u64,
-    affiliate: Address,
-    amount: i128,
-    total_paid: i128,
-    timestamp: u64,
-) {
-    AffiliateCommissionPaidEvent {
-        campaign_id,
-        affiliate,
-        amount,
-        total_paid,
-pub struct BackerPerkClaimedEvent {
-    pub campaign_id: u64,
-    pub backer: Address,
-    pub tier_index: u32,
-    pub perk_index: u32,
-    pub perk_name: String,
-    pub timestamp: u64,
-}
-
-pub fn publish_backer_perk_claimed_event(
-    env: &Env,
-    campaign_id: u64,
-    backer: Address,
-    tier_index: u32,
-    perk_index: u32,
-    perk_name: String,
-    timestamp: u64,
-) {
-    BackerPerkClaimedEvent {
-        campaign_id,
-        backer,
-        tier_index,
-        perk_index,
-        perk_name,
+        token,
         timestamp,
     }
     .publish(env);

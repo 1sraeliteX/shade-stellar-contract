@@ -92,7 +92,7 @@ fn test_subscription_charge_records_history() {
     let customer = Address::generate(&env);
     let token_client = token::StellarAssetClient::new(&env, &token);
     token_client.mint(&customer, &1000);
-    
+
     // Manual approval for subscription
     let token_token_client = token::TokenClient::new(&env, &token);
     token_token_client.approve(&customer, &shade_client.address, &1000, &2000);

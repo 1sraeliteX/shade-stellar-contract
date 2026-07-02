@@ -1,4 +1,4 @@
-use crate::components::{core, reentrancy};
+use crate::components::{core, platform_fee, reentrancy};
 use crate::errors::ContractError;
 use crate::events;
 use crate::types::{
@@ -187,15 +187,7 @@ pub fn get_token_oracle(env: &Env, token: &Address) -> OracleConfig {
 }
 
 pub fn calculate_fee(env: &Env, merchant: &Address, token: &Address, amount: i128) -> i128 {
-    let fee_bps: i128 = get_fee(env, token);
-    if fee_bps == 0 {
-        return 0;
-    }
-
-    let volume = get_merchant_volume(env, merchant, token);
-    let discounted_bps = apply_volume_discount(fee_bps, volume);
-
-    (amount * discounted_bps) / 10_000i128
+    platform_fee::compute_split(env, merchant, token, amount).platform_fee
 }
 
 pub fn get_merchant_volume(env: &Env, merchant: &Address, token: &Address) -> i128 {
@@ -293,11 +285,11 @@ pub fn get_token_volume(env: &Env, token: &Address) -> i128 {
 
 fn record_token_payment(env: &Env, token: &Address, volume_amount: i128, fee_amount: i128) {
     let mut analytics = get_token_analytics(env, token);
-    
+
     // Check if this is a new merchant for this token
     let current_volume = get_token_volume(env, token);
     let is_new_merchant = current_volume == 0;
-    
+
     analytics.total_volume += volume_amount;
     analytics.total_fees += fee_amount;
     analytics.transaction_count += 1;
@@ -306,11 +298,10 @@ fn record_token_payment(env: &Env, token: &Address, volume_amount: i128, fee_amo
     }
     analytics.last_updated = env.ledger().timestamp();
 
-    env.storage().persistent().set(
-        &DataKey::TokenAnalytics(token.clone()),
-        &analytics,
-    );
-    
+    env.storage()
+        .persistent()
+        .set(&DataKey::TokenAnalytics(token.clone()), &analytics);
+
     env.storage().persistent().set(
         &DataKey::TokenVolume(token.clone()),
         &analytics.total_volume,
@@ -352,12 +343,12 @@ pub fn get_token_dominance_metrics(env: &Env, tokens: &Vec<Address>) -> Vec<(Add
 pub fn get_top_tokens_by_volume(env: &Env, limit: u32) -> Vec<(Address, i128)> {
     let accepted_tokens = crate::components::admin::get_accepted_tokens(env);
     let mut all_metrics = get_token_dominance_metrics(env, &accepted_tokens);
-    
+
     // Truncate to specified limit
     while all_metrics.len() > limit {
         all_metrics.pop_back();
     }
-    
+
     all_metrics
 }
 
@@ -366,38 +357,20 @@ pub fn get_token_market_share(env: &Env, token: &Address) -> i128 {
     if token_volume == 0 {
         return 0;
     }
-    
+
     let accepted_tokens = crate::components::admin::get_accepted_tokens(env);
     let mut total_volume: i128 = 0;
-    
+
     for t in accepted_tokens.iter() {
         total_volume += get_token_volume(env, &t);
     }
-    
+
     if total_volume == 0 {
         return 0;
     }
-    
+
     // Return market share as basis points (10000 = 100%)
     (token_volume * 10000) / total_volume
-}
-
-fn apply_volume_discount(fee_bps: i128, volume: i128) -> i128 {
-    let discount_percentage = if volume >= 200_000 {
-        50 // 50% discount
-    } else if volume >= 50_000 {
-        25 // 25% discount
-    } else if volume >= 10_000 {
-        10 // 10% discount
-    } else {
-        0
-    };
-
-    if discount_percentage == 0 {
-        fee_bps
-    } else {
-        (fee_bps * (100 - discount_percentage)) / 100
-    }
 }
 
 pub fn propose_fee(env: &Env, admin: &Address, token: &Address, fee: i128) {

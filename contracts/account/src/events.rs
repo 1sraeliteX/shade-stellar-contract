@@ -1,4 +1,4 @@
-use soroban_sdk::{ contractevent, Address, Env };
+use soroban_sdk::{contractevent, Address, Env};
 
 #[contractevent]
 pub struct AccountInitializedEvent {
@@ -11,13 +11,14 @@ pub fn publish_account_initialized_event(
     env: &Env,
     merchant: Address,
     merchant_id: u64,
-    timestamp: u64
+    timestamp: u64,
 ) {
     (AccountInitializedEvent {
         merchant,
         merchant_id,
         timestamp,
-    }).publish(env);
+    })
+    .publish(env);
 }
 
 #[contractevent(topics = ["account_restricted"])]
@@ -55,14 +56,15 @@ pub fn publish_refund_processed_event(
     token: Address,
     amount: i128,
     to: Address,
-    timestamp: u64
+    timestamp: u64,
 ) {
     (RefundProcessedEvent {
         token,
         amount,
         recipient: to,
         timestamp,
-    }).publish(env);
+    })
+    .publish(env);
 }
 
 #[contractevent]
@@ -90,7 +92,7 @@ pub fn publish_withdrawal_to_event(
     merchant: Address,
     recipient: Address,
     amount: i128,
-    timestamp: u64
+    timestamp: u64,
 ) {
     (WithdrawalToEvent {
         token,
@@ -98,7 +100,8 @@ pub fn publish_withdrawal_to_event(
         recipient,
         amount,
         timestamp,
-    }).publish(env);
+    })
+    .publish(env);
 }
 
 #[contractevent]
@@ -118,7 +121,7 @@ pub fn publish_pending_withdrawal_created_event(
     amount: i128,
     recipient: Address,
     initiator: Address,
-    timestamp: u64
+    timestamp: u64,
 ) {
     (PendingWithdrawalCreatedEvent {
         id,
@@ -127,7 +130,8 @@ pub fn publish_pending_withdrawal_created_event(
         recipient,
         initiator,
         timestamp,
-    }).publish(env);
+    })
+    .publish(env);
 }
 
 #[contractevent]
@@ -142,7 +146,8 @@ pub fn publish_withdrawal_approved_event(env: &Env, id: u64, approver: Address, 
         id,
         approver,
         timestamp,
-    }).publish(env);
+    })
+    .publish(env);
 }
 
 #[contractevent]
