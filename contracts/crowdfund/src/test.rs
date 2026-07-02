@@ -1,9 +1,16 @@
 use super::*;
-use soroban_sdk::testutils::{Address as _, Ledger as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::StellarAssetClient;
-use soroban_sdk::{vec, Address, Env};
+use soroban_sdk::{vec, Address, Env, Vec};
 
-fn setup() -> (Env, Address, CrowdfundContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    Address,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|l| l.timestamp = 1_000_000);
@@ -380,8 +387,14 @@ fn test_select_reward_tier_maps_pledge_to_tier() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &500);
@@ -400,8 +413,14 @@ fn test_select_reward_tier_can_be_updated() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &600);
@@ -424,7 +443,10 @@ fn test_select_reward_tier_below_minimum_panics() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 500, name: soroban_sdk::String::from_str(&env, "Premium") },
+        RewardTier {
+            min_pledge: 500,
+            name: soroban_sdk::String::from_str(&env, "Premium")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &100);
@@ -443,7 +465,10 @@ fn test_select_invalid_tier_index_panics() {
 
     client.set_reward_tiers(&soroban_sdk::vec![
         &env,
-        RewardTier { min_pledge: 100, name: soroban_sdk::String::from_str(&env, "Basic") },
+        RewardTier {
+            min_pledge: 100,
+            name: soroban_sdk::String::from_str(&env, "Basic")
+        },
     ]);
 
     StellarAssetClient::new(&env, &token).mint(&contributor, &500);
@@ -464,7 +489,14 @@ fn test_get_selected_tier_returns_none_before_selection() {
 
 // ── #311 – Milestone-based fund release ──────────────────────────────────────
 
-fn setup_milestone_campaign() -> (Env, Address, CrowdfundContractClient<'static>, Address, Address, Address) {
+fn setup_milestone_campaign() -> (
+    Env,
+    Address,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let (env, contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &10_000, &deadline);
@@ -508,7 +540,9 @@ fn setup_governed_milestone_campaign() -> (
 
     env.ledger().with_mut(|l| l.timestamp += 86_401);
 
-    (env, contract, client, token, organizer, voter1, voter2, voter3)
+    (
+        env, contract, client, token, organizer, voter1, voter2, voter3,
+    )
 }
 
 #[test]
@@ -664,8 +698,14 @@ fn milestone_without_majority_cannot_release_funds() {
 fn tiers(env: &Env) -> soroban_sdk::Vec<RewardTier> {
     soroban_sdk::vec![
         env,
-        RewardTier { min_pledge: 200, name: soroban_sdk::String::from_str(env, "Silver") },
-        RewardTier { min_pledge: 1_000, name: soroban_sdk::String::from_str(env, "Gold") },
+        RewardTier {
+            min_pledge: 200,
+            name: soroban_sdk::String::from_str(env, "Silver")
+        },
+        RewardTier {
+            min_pledge: 1_000,
+            name: soroban_sdk::String::from_str(env, "Gold")
+        },
     ]
 }
 
@@ -768,7 +808,9 @@ fn test_non_organizer_cannot_fulfill_reward() {
     let client2 = CrowdfundContractClient::new(&env2, &contract2);
     env2.ledger().with_mut(|l| l.timestamp = 1_000_000);
     let org2 = Address::generate(&env2);
-    let tok2 = env2.register_stellar_asset_contract_v2(org2.clone()).address();
+    let tok2 = env2
+        .register_stellar_asset_contract_v2(org2.clone())
+        .address();
     let con2 = Address::generate(&env2);
     client2.init_campaign(&org2, &tok2, &100, &(env2.ledger().timestamp() + 1_000));
     // No mock_all_auths — calling fulfill_reward as non-organizer must panic.
@@ -957,201 +999,361 @@ fn test_leave_comment_requires_existing_pledge() {
     client.leave_comment(&contributor, &comment);
 }
 
-// ── Feature 188: Campaign KYC Tests ─────────────────────────────────────────
+// ── Deep campaign statistics (read-only views) ───────────────────────────────
 
 #[test]
-fn test_kyc_not_required_by_default() {
+fn test_campaign_stats_aggregate_metrics() {
     let (env, _contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &10_000, &deadline);
 
-    assert!(!client.is_kyc_required());
+    let contributor2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &3_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor2, &5_000);
+    client.contribute(&contributor, &3_000);
+    client.contribute(&contributor2, &5_000);
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.goal, 10_000);
+    assert_eq!(stats.raised, 8_000);
+    assert_eq!(stats.total_matched, 0);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.contributor_count, 2);
+    assert_eq!(stats.average_pledge, 4_000);
+    assert_eq!(stats.largest_pledge, 5_000);
+    assert_eq!(stats.largest_backer, Some(contributor2));
+    assert_eq!(stats.percent_funded_bps, 8_000); // 80%
+    assert_eq!(stats.deadline, deadline);
+    assert!(stats.seconds_remaining > 0);
+    assert!(!stats.is_ended);
+    assert!(!stats.goal_reached);
+    assert!(!stats.executed);
 }
 
 #[test]
-fn test_set_kyc_required() {
-    let (env, _contract, client, token, organizer, _contributor) = setup();
+fn test_campaign_stats_reflects_matching_pool() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &10_000, &deadline);
 
-    client.set_kyc_required(&true);
-    assert!(client.is_kyc_required());
-    
-    client.set_kyc_required(&false);
-    assert!(!client.is_kyc_required());
+    let sponsor = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&sponsor, &1_000);
+    client.fund_matching_pool(&sponsor, &1_000);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_000);
+    client.contribute(&contributor, &2_000);
+
+    // 2_000 pledge fully matched by the 1_000 pool → effective 3_000.
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.raised, 3_000);
+    assert_eq!(stats.total_matched, 1_000);
+    assert_eq!(stats.matching_pool_balance, 0);
+    assert_eq!(stats.largest_pledge, 3_000);
+}
+
+#[test]
+fn test_campaign_stats_overfunded_and_ended() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 100;
+    client.init_campaign(&organizer, &token, &1_000, &deadline);
+
+    StellarAssetClient::new(&env, &token).mint(&contributor, &2_500);
+    client.contribute(&contributor, &2_500);
+
+    env.ledger().with_mut(|l| l.timestamp += 200); // past deadline
+
+    let stats = client.get_campaign_stats();
+    assert_eq!(stats.percent_funded_bps, 25_000); // 250%
+    assert!(stats.goal_reached);
+    assert!(stats.is_ended);
+    assert_eq!(stats.seconds_remaining, 0);
 }
 
 #[test]
 #[should_panic]
-fn test_set_kyc_required_not_organizer() {
-    let env = Env::default();
-    // Don't mock all auths here to test auth failure
-    let contract = env.register(CrowdfundContract, ());
-    let client = CrowdfundContractClient::new(&env, &contract);
-    let token_admin = Address::generate(&env);
-    let token = env.register_stellar_asset_contract_v2(token_admin).address();
-    let organizer = Address::generate(&env);
-    let non_organizer = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400;
-    
-    // Now mock auths only for init_campaign
-    env.mock_all_auths();
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    
-    // Now disable mock auths to test that non-organizer can't set KYC required
-    // Create a new client on same contract with fresh env without mock auths
-    // For simplicity, this test uses the should_panic to indicate failure
-    client.set_kyc_required(&true);
+fn test_campaign_stats_before_init_panics() {
+    let (_env, _contract, client, _token, _organizer, _contributor) = setup();
+    client.get_campaign_stats();
 }
 
 #[test]
-fn test_add_kyc_verified_address() {
+fn test_backer_leaderboard_sorted_and_limited() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &100_000, &deadline);
+
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &9_000);
+    StellarAssetClient::new(&env, &token).mint(&c3, &4_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &9_000);
+    client.contribute(&c3, &4_000);
+
+    // Top 2 backers, descending by pledge.
+    let top = client.get_backer_leaderboard(&organizer, &2);
+    assert_eq!(top.len(), 2);
+    assert_eq!(top.get(0).unwrap(), (c2, 9_000));
+    assert_eq!(top.get(1).unwrap(), (c3, 4_000));
+
+    // A larger limit returns all backers without panicking.
+    let all = client.get_backer_leaderboard(&organizer, &10);
+    assert_eq!(all.len(), 3);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_backer_leaderboard_rejects_non_organizer() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    let stranger = Address::generate(&env);
+    client.get_backer_leaderboard(&stranger, &5);
+}
+
+#[test]
+fn test_snapshot_returns_stats_and_emits_event() {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &10_000, &deadline);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &6_000);
+    client.contribute(&contributor, &6_000);
+
+    let stats = client.snapshot_campaign_stats(&organizer);
+    assert_eq!(stats.raised, 6_000);
+    assert_eq!(stats.percent_funded_bps, 6_000);
+    // The snapshot publishes a detailed event for off-chain indexing.
+    assert!(!env.events().all().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_snapshot_rejects_non_organizer() {
     let (env, _contract, client, token, organizer, contributor) = setup();
     let deadline = env.ledger().timestamp() + 86_400;
     client.init_campaign(&organizer, &token, &10_000, &deadline);
 
-    client.add_kyc_verified(&contributor);
-    assert!(client.is_kyc_verified(&contributor));
+    let stranger = Address::generate(&env);
+    let _ = contributor;
+    client.snapshot_campaign_stats(&stranger);
+}
+
+// ── Gamification: badges & achievements ──────────────────────────────────────
+
+fn setup_funded_campaign(
+    goal: i128,
+) -> (
+    Env,
+    CrowdfundContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
+    let (env, _contract, client, token, organizer, contributor) = setup();
+    let deadline = env.ledger().timestamp() + 86_400;
+    client.init_campaign(&organizer, &token, &goal, &deadline);
+    (env, client, token, organizer, contributor)
 }
 
 #[test]
-#[should_panic]
-fn test_add_kyc_verified_already_verified() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
+fn test_first_backer_badge_awarded_and_queryable() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
 
-    client.add_kyc_verified(&contributor);
-    client.add_kyc_verified(&contributor);
+    // First contributor self-claims the FirstBacker badge.
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+    assert_eq!(client.badge_count(&contributor), 1);
+    assert!(client
+        .badge_awarded_at(&contributor, &BadgeKind::FirstBacker)
+        .is_some());
+    assert_eq!(
+        client.get_backer_badges(&contributor),
+        vec![&env, BadgeKind::FirstBacker]
+    );
 }
 
 #[test]
-#[should_panic]
-fn test_add_kyc_verified_not_organizer() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    
-    // Create a new client without mocking auths to test
-    let env2 = Env::default();
-    let contract2 = env2.register(CrowdfundContract, ());
-    let client2 = CrowdfundContractClient::new(&env2, &contract2);
-    env2.mock_all_auths();
-    let organizer2 = Address::generate(&env2);
-    let token2 = env2.register_stellar_asset_contract_v2(Address::generate(&env2)).address();
-    let deadline2 = env2.ledger().timestamp() + 86_400;
-    client2.init_campaign(&organizer2, &token2, &10_000, &deadline2);
-    
-    // Now try to call as non-organizer (without mock auths)
-    let non_organizer2 = Address::generate(&env2);
-    let contributor2 = Address::generate(&env2);
-    client2.add_kyc_verified(&contributor2); // Should panic because auth fails
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_first_backer_badge_rejects_non_first() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    let c2 = Address::generate(&env);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    StellarAssetClient::new(&env, &token).mint(&c2, &2_000);
+    client.contribute(&contributor, &1_000);
+    client.contribute(&c2, &2_000);
+    let _ = organizer;
+
+    // c2 is not the first backer.
+    client.award_badge(&c2, &c2, &BadgeKind::FirstBacker);
 }
 
 #[test]
-fn test_remove_kyc_verified_address() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
+#[should_panic(expected = "Error(Contract, #29)")]
+fn test_badge_cannot_be_awarded_twice() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
 
-    client.add_kyc_verified(&contributor);
-    assert!(client.is_kyc_verified(&contributor));
-    
-    client.remove_kyc_verified(&contributor);
-    assert!(!client.is_kyc_verified(&contributor));
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
 }
 
 #[test]
-#[should_panic]
-fn test_remove_kyc_verified_not_verified() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_award_badge_rejects_third_party() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
 
-    client.remove_kyc_verified(&contributor);
+    // A stranger (neither the backer nor organizer) cannot award.
+    let stranger = Address::generate(&env);
+    client.award_badge(&stranger, &contributor, &BadgeKind::FirstBacker);
 }
 
 #[test]
-fn test_contribute_when_kyc_not_required() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
+fn test_organizer_can_award_on_behalf_of_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+    let _ = env;
 
+    client.award_badge(&organizer, &contributor, &BadgeKind::FirstBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::FirstBacker));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_non_backer_is_ineligible() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
+
+    // An address that never pledged cannot earn any badge.
+    let outsider = Address::generate(&env);
+    client.award_badge(&organizer, &outsider, &BadgeKind::FirstBacker);
+}
+
+#[test]
+fn test_whale_badge_requires_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
     StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
     client.contribute(&contributor, &5_000);
-    assert_eq!(client.raised(), 5_000);
+
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    assert!(client.has_badge(&contributor, &BadgeKind::Whale));
 }
 
 #[test]
-fn test_contribute_verified_when_kyc_required() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    client.set_kyc_required(&true);
-    client.add_kyc_verified(&contributor);
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_whale_badge_rejects_below_threshold() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(100_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000);
 
+    client.set_badge_config(&organizer, &5_000, &3);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #31)")]
+fn test_whale_badge_requires_config() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(100_000);
     StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
     client.contribute(&contributor, &5_000);
-    assert_eq!(client.raised(), 5_000);
+    let _ = env;
+
+    // No set_badge_config call → threshold unset.
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
 }
 
 #[test]
-#[should_panic]
-fn test_contribute_unverified_when_kyc_required() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    client.set_kyc_required(&true);
+fn test_early_backer_badge_respects_limit() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
+    }
 
+    // First two contributors qualify; the third does not.
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&contributor, &contributor, &BadgeKind::EarlyBacker);
+    client.award_badge(&c2, &c2, &BadgeKind::EarlyBacker);
+    assert!(client.has_badge(&contributor, &BadgeKind::EarlyBacker));
+    assert!(client.has_badge(&c2, &BadgeKind::EarlyBacker));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_early_backer_badge_rejects_late_backer() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000_000);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+    for (who, amt) in [(&contributor, 1_000_i128), (&c2, 1_000), (&c3, 1_000)] {
+        StellarAssetClient::new(&env, &token).mint(who, &amt);
+        client.contribute(who, &amt);
+    }
+
+    client.set_badge_config(&organizer, &10_000, &2);
+    client.award_badge(&c3, &c3, &BadgeKind::EarlyBacker); // index 2, limit 2 → ineligible
+}
+
+#[test]
+fn test_goal_getter_badge_after_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(1_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised == goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    assert!(client.has_badge(&contributor, &BadgeKind::GoalGetter));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #30)")]
+fn test_goal_getter_badge_before_goal_reached() {
+    let (env, client, token, _organizer, contributor) = setup_funded_campaign(10_000);
+    StellarAssetClient::new(&env, &token).mint(&contributor, &1_000);
+    client.contribute(&contributor, &1_000); // raised < goal
+    let _ = env;
+
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_set_badge_config_rejects_non_organizer() {
+    let (env, client, _token, _organizer, _contributor) = setup_funded_campaign(10_000);
+    let stranger = Address::generate(&env);
+    client.set_badge_config(&stranger, &1_000, &5);
+}
+
+#[test]
+fn test_multiple_badges_accumulate() {
+    let (env, client, token, organizer, contributor) = setup_funded_campaign(1_000);
     StellarAssetClient::new(&env, &token).mint(&contributor, &5_000);
-    client.contribute(&contributor, &5_000);
-}
+    client.contribute(&contributor, &5_000); // first backer, whale-sized, goal reached
 
-#[test]
-fn test_kyc_events_emitted() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    
-    // Test set_kyc_required event
-    client.set_kyc_required(&true);
-    let events = env.events().all();
-    let last_event = events.get(events.len() - 1).unwrap();
-    assert_eq!(last_event.0, vec![&env, symbol_short!("KYCRequirement")]);
-    let kyc_event: KYCRequirementSetEvent = last_event.1.decode().unwrap();
-    assert_eq!(kyc_event.required, true);
-    
-    // Test add_kyc_verified event
-    client.add_kyc_verified(&contributor);
-    let events2 = env.events().all();
-    let last_event2 = events2.get(events2.len() - 1).unwrap();
-    assert_eq!(last_event2.0, vec![&env, symbol_short!("KYCVerifiedAdd")]);
-    let add_event: KYCVerifiedAddedEvent = last_event2.1.decode().unwrap();
-    assert_eq!(add_event.address, contributor);
-    
-    // Test remove_kyc_verified event
-    client.remove_kyc_verified(&contributor);
-    let events3 = env.events().all();
-    let last_event3 = events3.get(events3.len() - 1).unwrap();
-    assert_eq!(last_event3.0, vec![&env, symbol_short!("KYCVerifiedRemove")]);
-    let remove_event: KYCVerifiedRemovedEvent = last_event3.1.decode().unwrap();
-    assert_eq!(remove_event.address, contributor);
-}
+    client.set_badge_config(&organizer, &5_000, &5);
+    client.award_badge(&contributor, &contributor, &BadgeKind::FirstBacker);
+    client.award_badge(&contributor, &contributor, &BadgeKind::Whale);
+    client.award_badge(&contributor, &contributor, &BadgeKind::GoalGetter);
+    // The award publishes a detailed event (checked on the latest invocation).
+    assert!(!env.events().all().is_empty());
 
-#[test]
-fn test_storage_rollback_when_panic() {
-    let (env, _contract, client, token, organizer, contributor) = setup();
-    let deadline = env.ledger().timestamp() + 86_400;
-    client.init_campaign(&organizer, &token, &10_000, &deadline);
-    client.set_kyc_required(&true);
-    
-    // First verify not verified, try to contribute (should panic), then verify still not verified
-    assert!(!client.is_kyc_verified(&contributor));
-    
-    // Try to contribute as unverified (should panic)
-    let result = client.try_contribute(&contributor, &5_000);
-    assert!(result.is_err());
-    
-    // Verify nothing changed (storage not updated)
-    assert_eq!(client.raised(), 0);
+    assert_eq!(client.badge_count(&contributor), 3);
+    assert_eq!(client.get_backer_badges(&contributor).len(), 3);
 }

@@ -173,8 +173,7 @@ fn create_event_rejects_past_date() {
 #[test]
 fn purchase_ticket_transfers_funds_and_mints() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
     let buyer = Address::generate(&f.env);
     fund(&f.env, &f.token, &buyer, TOKEN_INITIAL_BALANCE);
 
@@ -204,8 +203,6 @@ fn purchase_ticket_transfers_funds_and_mints() {
     // Sold counter incremented.
     let event = f.client.get_event(&event_id);
     assert_eq!(event.sold, 1);
-    assert_eq!(event.holders.len(), 1);
-    assert_eq!(event.holders.get(0).unwrap(), buyer1);
 
     // Funds moved off the buyer.
     let token_client = TokenClient::new(&f.env, &f.token);
@@ -219,8 +216,7 @@ fn purchase_ticket_transfers_funds_and_mints() {
 #[test]
 fn purchase_ticket_routes_fee_to_platform_when_configured() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
     // 10% platform fee on this token.
     f.client.set_fee(&f.admin, &f.token, &1_000i128);
 
@@ -243,7 +239,10 @@ fn purchase_ticket_routes_fee_to_platform_when_configured() {
     let token_client = TokenClient::new(&f.env, &f.token);
     let platform = f.client.get_platform_account();
     let expected_fee = price / 10; // 10% in bps == 1000
-    assert_eq!(token_client.balance(&merchant_account), price - expected_fee);
+    assert_eq!(
+        token_client.balance(&merchant_account),
+        price - expected_fee
+    );
     assert_eq!(token_client.balance(&platform), expected_fee);
 }
 
@@ -285,8 +284,7 @@ fn purchase_ticket_panics_when_event_missing() {
 #[test]
 fn resale_splits_royalty_and_proceeds() {
     let f = setup();
-    let (merchant, merchant_account) =
-        register_merchant_with_account(&f.env, &f.client, &f.token);
+    let (merchant, merchant_account) = register_merchant_with_account(&f.env, &f.client, &f.token);
 
     let buyer1 = Address::generate(&f.env);
     let buyer2 = Address::generate(&f.env);
@@ -540,60 +538,59 @@ fn cancel_event_cannot_refund_twice() {
 
 #[test]
 fn test_cancel_event() {
-    let (env, client, _shade_id, admin) = setup_test();
-    let token = create_test_token(&env);
-    client.add_accepted_token(&admin, &token);
+    let f = setup();
+    let (merchant, _) = register_merchant_with_account(&f.env, &f.client, &f.token);
 
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant);
+    let buyer1 = Address::generate(&f.env);
+    let buyer2 = Address::generate(&f.env);
+    let buyer3 = Address::generate(&f.env);
+    fund(&f.env, &f.token, &buyer1, TOKEN_INITIAL_BALANCE);
+    fund(&f.env, &f.token, &buyer2, TOKEN_INITIAL_BALANCE);
+    fund(&f.env, &f.token, &buyer3, TOKEN_INITIAL_BALANCE);
 
-    let event_id = client.create_event(
+    let event_id = f.client.create_event(
         &merchant,
-        &String::from_str(&env, "Concert"),
-        &100,
-        &token,
-        &5,
+        &String::from_str(&f.env, "Concert"),
+        &100i128,
+        &f.token,
+        &5u32,
+        &future_date(&f.env),
+        &0u32,
     );
 
-    let buyer1 = Address::generate(&env);
-    let buyer2 = Address::generate(&env);
-    let buyer3 = Address::generate(&env);
-    
-    client.purchase_ticket(&event_id, &buyer1);
-    client.purchase_ticket(&event_id, &buyer2);
-    client.purchase_ticket(&event_id, &buyer3);
+    f.client.purchase_ticket(&event_id, &buyer1);
+    f.client.purchase_ticket(&event_id, &buyer2);
+    f.client.purchase_ticket(&event_id, &buyer3);
 
-    let event = client.get_event(&event_id);
-    assert_eq!(event.status, EventStatus::Active);
+    let event = f.client.get_event(&event_id);
+    assert!(!event.cancelled);
     assert_eq!(event.sold, 3);
-    assert_eq!(event.holders.len(), 3);
 
-    client.cancel_event(&event_id, &merchant);
+    f.client.cancel_event_and_batch_refund(&merchant, &event_id);
 
-    let event = client.get_event(&event_id);
-    assert_eq!(event.status, EventStatus::Cancelled);
+    let event = f.client.get_event(&event_id);
+    assert!(event.cancelled);
 }
 
 #[test]
 #[should_panic]
 fn test_cannot_purchase_after_cancel() {
-    let (env, client, _shade_id, admin) = setup_test();
-    let token = create_test_token(&env);
-    client.add_accepted_token(&admin, &token);
+    let f = setup();
+    let (merchant, _) = register_merchant_with_account(&f.env, &f.client, &f.token);
 
-    let merchant = Address::generate(&env);
-    client.register_merchant(&merchant);
-
-    let event_id = client.create_event(
+    let event_id = f.client.create_event(
         &merchant,
-        &String::from_str(&env, "Concert"),
-        &100,
-        &token,
-        &5,
+        &String::from_str(&f.env, "Concert"),
+        &100i128,
+        &f.token,
+        &5u32,
+        &future_date(&f.env),
+        &0u32,
     );
 
-    client.cancel_event(&event_id, &merchant);
+    f.client.cancel_event_and_batch_refund(&merchant, &event_id);
 
-    let buyer = Address::generate(&env);
-    client.purchase_ticket(&event_id, &buyer);
+    let buyer = Address::generate(&f.env);
+    fund(&f.env, &f.token, &buyer, TOKEN_INITIAL_BALANCE);
+    f.client.purchase_ticket(&event_id, &buyer);
 }
