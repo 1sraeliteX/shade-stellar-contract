@@ -1,10 +1,8 @@
-use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Admin,
-    PendingAdmin,
-    Paused,
     FeeInBasisPoints(Address),
     FeeAmount(Address),
     ContractInfo,
@@ -47,13 +45,39 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
-    // --- Pledge / crowdfund campaign system ---
-    Campaign(u64),
-    CampaignCount,
-    Pledge(u64),
-    PledgeCount,
-    CampaignPledges(u64),
-    ContributorPledges(Address),
+    // --- Bridge listener / external deposits ---
+    /// Allowlist flag for an authorized bridge listener (relayer) address.
+    BridgeListener(Address),
+    /// Number of currently registered bridge listeners.
+    BridgeListenerCount,
+    /// Persisted external-deposit record keyed by sequential id.
+    BridgeDeposit(u64),
+    /// Monotonic counter of recorded external deposits.
+    BridgeDepositCount,
+    /// Replay-protection flag keyed by the source-chain transaction hash.
+    ProcessedBridgeDeposit(BytesN<32>),
+    /// Cumulative amount credited to a recipient per token via the bridge.
+    BridgeCredit(Address, Address),
+    // --- DAO governance for protocol upgrades ---
+    /// Singleton governance state: voting params + member/proposal counters.
+    /// Bundled into one key to stay within the `#[contracttype]` 50-case cap
+    /// and to minimize the number of distinct storage entries.
+    GovState,
+    /// Allowlist flag for a governance council member.
+    GovMember(Address),
+    /// Persisted upgrade proposal keyed by sequential id.
+    GovProposal(u64),
+    /// Records a member's vote on a proposal (presence ⇒ voted).
+    GovVote(u64, Address),
+}
+
+/// A single per-token auto-withdrawal threshold. Stored inside [`Merchant`] so
+/// no extra `DataKey` variants are consumed (the enum is at its 50-case cap).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AutoWithdrawalThreshold {
+    pub token: Address,
+    pub threshold: i128,
 }
 
 #[contracttype]
@@ -73,6 +97,11 @@ pub struct Merchant {
     pub date_registered: u64,
     pub account: Address,
     pub webhook: String,
+    /// Optional recipient for auto-withdrawals. Defaults to the merchant
+    /// address when unset.
+    pub auto_withdrawal_recipient: Option<Address>,
+    /// Per-token auto-withdrawal thresholds.
+    pub auto_withdrawal_thresholds: Vec<AutoWithdrawalThreshold>,
 }
 
 #[contracttype]
@@ -211,6 +240,23 @@ pub struct CrossChainBridgePayload {
     pub memo: Option<String>,
 }
 
+/// A confirmed external-chain deposit recorded by an authorized bridge listener.
+///
+/// The `source_tx_id` is the 32-byte transaction hash on the origin chain and
+/// doubles as the global idempotency key (see `DataKey::ProcessedBridgeDeposit`).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BridgeDeposit {
+    pub id: u64,
+    pub source_chain: String,
+    pub source_tx_id: BytesN<32>,
+    pub listener: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
 // ── Time-locked fee update ────────────────────────────────────────────────────
 
 #[contracttype]
@@ -306,6 +352,31 @@ pub enum EventStatus {
 }
 
 #[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowStatus {
+    Created = 0,
+    Funded = 1,
+    Released = 2,
+    Refunded = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Escrow {
+    pub id: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: EscrowStatus,
+    pub invoice_id: Option<u64>,
+    pub date_created: u64,
+    pub date_funded: Option<u64>,
+    pub date_released: Option<u64>,
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Event {
     pub id: u64,
@@ -366,49 +437,42 @@ pub struct PaymentPayload {
     pub max_slippage_bps: Option<u32>,
 }
 
-// --- Pledge / crowdfund campaign types ---
+// ── DAO governance for protocol upgrades ──────────────────────────────────────
+
+/// Singleton governance configuration and counters. `voting_period == 0` is the
+/// sentinel for "not yet configured".
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovState {
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub member_count: u32,
+    pub proposal_count: u64,
+}
 
 #[contracttype]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
-pub enum CampaignStatus {
+pub enum ProposalStatus {
+    /// Open for voting.
     Active = 0,
+    /// Passed quorum + majority and the upgrade was applied.
     Executed = 1,
-    Cancelled = 2,
+    /// Failed quorum or majority after the voting window closed.
+    Defeated = 2,
 }
 
+/// A council-governed proposal to upgrade the contract's WASM to `wasm_hash`.
+/// Voting is one-member-one-vote; `approvals`/`rejections` are head counts.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Campaign {
+pub struct UpgradeProposal {
     pub id: u64,
-    pub merchant_id: u64,
-    pub merchant: Address,
-    pub title: soroban_sdk::String,
-    pub goal: i128,
-    pub token: Address,
-    pub deadline: u64,
-    pub raised: i128,
-    pub status: CampaignStatus,
-    pub date_created: u64,
-    pub refunds_processed: bool,
-}
-
-#[contracttype]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum PledgeStatus {
-    Active = 0,
-    Refunded = 1,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Pledge {
-    pub id: u64,
-    pub campaign_id: u64,
-    pub contributor: Address,
-    pub amount: i128,
-    pub token: Address,
-    pub status: PledgeStatus,
-    pub timestamp: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub created_at: u64,
+    pub voting_ends_at: u64,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub status: ProposalStatus,
 }

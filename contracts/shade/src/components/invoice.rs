@@ -1,5 +1,7 @@
-use crate::components::{access_control, admin, history, merchant, signature_util};
-use crate::errors::ContractError;
+use crate::components::{
+    access_control, admin, auto_withdrawal, history, merchant, signature_util,
+};
+use crate::errors::{ContractError, EscrowError};
 use crate::events;
 use crate::types::{
     DataKey, FiatPricing, FiatPricingData, Invoice, InvoiceFilter, InvoicePricingMode,
@@ -572,7 +574,12 @@ pub fn get_invoices(env: &Env, filter: InvoiceFilter) -> Vec<Invoice> {
 }
 //no new changes to add
 
-pub fn refund_invoice_partial(env: &Env, merchant_address: &Address, invoice_id: u64, amount: i128) {
+pub fn refund_invoice_partial(
+    env: &Env,
+    merchant_address: &Address,
+    invoice_id: u64,
+    amount: i128,
+) {
     merchant_address.require_auth();
     let mut invoice = get_invoice(env, invoice_id);
 
@@ -766,6 +773,10 @@ pub fn pay_invoice_partial(env: &Env, payer: &Address, invoice_id: u64, amount: 
     };
     history::record_transaction(env, payer, transaction);
 
+    // Sweep merchant funds to the configured recipient if the auto-withdrawal
+    // threshold has been reached for this token.
+    auto_withdrawal::check_and_trigger_auto_withdrawal(env, invoice.merchant_id, &invoice.token);
+
     fee_amount
 }
 
@@ -859,12 +870,6 @@ pub fn claim_refund(env: &Env, buyer: &Address, invoice_id: u64) {
 
     let mut invoice = get_invoice(env, invoice_id);
 
-    // Only the original payer (buyer) may claim
-    match &invoice.payer {
-        Some(payer) if payer == buyer => {}
-        _ => panic_with_error!(env, ContractError::NotAuthorized),
-    }
-
     // Invoice must have an expiration timestamp set
     let expires_at = match invoice.expires_at {
         Some(ts) => ts,
@@ -873,7 +878,12 @@ pub fn claim_refund(env: &Env, buyer: &Address, invoice_id: u64) {
 
     // Expiration must have passed
     if env.ledger().timestamp() < expires_at {
-        panic_with_error!(env, ContractError::EscrowNotExpired);
+        panic_with_error!(env, EscrowError::EscrowNotExpired);
+    }
+
+    // Already fully refunded?
+    if invoice.status == InvoiceStatus::Refunded {
+        panic_with_error!(env, EscrowError::EscrowAlreadyRefunded);
     }
 
     // Invoice must be in a paid (but unfulfilled) state — Paid or PartiallyPaid
@@ -881,10 +891,16 @@ pub fn claim_refund(env: &Env, buyer: &Address, invoice_id: u64) {
         panic_with_error!(env, ContractError::InvalidInvoiceStatus);
     }
 
+    // Only the original payer (buyer) may claim
+    match &invoice.payer {
+        Some(payer) if payer == buyer => {}
+        _ => panic_with_error!(env, ContractError::NotAuthorized),
+    }
+
     // Must not have already been fully refunded
     let amount_to_refund = invoice.amount_paid - invoice.amount_refunded;
     if amount_to_refund <= 0 {
-        panic_with_error!(env, ContractError::EscrowAlreadyRefunded);
+        panic_with_error!(env, EscrowError::EscrowAlreadyRefunded);
     }
 
     // Check merchant account has sufficient balance
