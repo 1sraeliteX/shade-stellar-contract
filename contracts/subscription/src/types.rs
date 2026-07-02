@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, contractevent, Address, String};
+use soroban_sdk::{contractevent, contracttype, Address, String};
 
 #[contractevent]
 #[derive(Clone, Debug, Eq, PartialEq)]

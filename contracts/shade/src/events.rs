@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contractevent, Address, BytesN, Env, Option, String, Vec};
 
 // ── Existing events ───────────────────────────────────────────────────────────
 
@@ -637,6 +637,251 @@ pub fn publish_bridge_placeholder_event(
     .publish(env);
 }
 
+// ── Bridge listener / external deposit events ─────────────────────────────────
+
+#[contractevent]
+pub struct BridgeListenerRegisteredEvent {
+    pub admin: Address,
+    pub listener: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_bridge_listener_registered_event(
+    env: &Env,
+    admin: Address,
+    listener: Address,
+    timestamp: u64,
+) {
+    BridgeListenerRegisteredEvent {
+        admin,
+        listener,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BridgeListenerRemovedEvent {
+    pub admin: Address,
+    pub listener: Address,
+    pub timestamp: u64,
+}
+
+pub fn publish_bridge_listener_removed_event(
+    env: &Env,
+    admin: Address,
+    listener: Address,
+    timestamp: u64,
+) {
+    BridgeListenerRemovedEvent {
+        admin,
+        listener,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct BridgeDepositRecordedEvent {
+    pub deposit_id: u64,
+    pub listener: Address,
+    pub source_chain: String,
+    pub source_tx_id: BytesN<32>,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn publish_bridge_deposit_recorded_event(
+    env: &Env,
+    deposit_id: u64,
+    listener: Address,
+    source_chain: String,
+    source_tx_id: BytesN<32>,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+    timestamp: u64,
+) {
+    BridgeDepositRecordedEvent {
+        deposit_id,
+        listener,
+        source_chain,
+        source_tx_id,
+        token,
+        amount,
+        recipient,
+        timestamp,
+    }
+    .publish(env);
+}
+
+// ── DAO governance events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct GovMemberAddedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_added_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberAddedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovMemberRemovedEvent {
+    pub admin: Address,
+    pub member: Address,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_member_removed_event(
+    env: &Env,
+    admin: Address,
+    member: Address,
+    member_count: u32,
+    timestamp: u64,
+) {
+    GovMemberRemovedEvent {
+        admin,
+        member,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct GovConfigSetEvent {
+    pub admin: Address,
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_gov_config_set_event(
+    env: &Env,
+    admin: Address,
+    voting_period: u64,
+    quorum_bps: u32,
+    timestamp: u64,
+) {
+    GovConfigSetEvent {
+        admin,
+        voting_period,
+        quorum_bps,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeProposedEvent {
+    pub proposal_id: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub voting_ends_at: u64,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposed_event(
+    env: &Env,
+    proposal_id: u64,
+    proposer: Address,
+    wasm_hash: BytesN<32>,
+    voting_ends_at: u64,
+    timestamp: u64,
+) {
+    UpgradeProposedEvent {
+        proposal_id,
+        proposer,
+        wasm_hash,
+        voting_ends_at,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeVoteCastEvent {
+    pub proposal_id: u64,
+    pub voter: Address,
+    pub approve: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_vote_cast_event(
+    env: &Env,
+    proposal_id: u64,
+    voter: Address,
+    approve: bool,
+    approvals: u32,
+    rejections: u32,
+    timestamp: u64,
+) {
+    UpgradeVoteCastEvent {
+        proposal_id,
+        voter,
+        approve,
+        approvals,
+        rejections,
+        timestamp,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct UpgradeProposalFinalizedEvent {
+    pub proposal_id: u64,
+    pub executor: Address,
+    pub approved: bool,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub member_count: u32,
+    pub timestamp: u64,
+}
+
+pub fn publish_upgrade_proposal_finalized_event(
+    env: &Env,
+    proposal_id: u64,
+    executor: Address,
+    approved: bool,
+    approvals: u32,
+    rejections: u32,
+    member_count: u32,
+    timestamp: u64,
+) {
+    UpgradeProposalFinalizedEvent {
+        proposal_id,
+        executor,
+        approved,
+        approvals,
+        rejections,
+        member_count,
+        timestamp,
+    }
+    .publish(env);
+}
+
 // ── Subscription events ───────────────────────────────────────────────────────
 
 // Kept token field from your branch (more informative than main's leaner version).
@@ -1068,6 +1313,73 @@ pub fn publish_ticket_resold_event(
     .publish(env);
 }
 
+// ── Auto-withdrawal events ─────────────────────────────────────────────────────
+
+#[contractevent]
+pub struct WithdrawalThresholdSetEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub threshold: i128,
+}
+
+pub fn publish_auto_withdrawal_threshold_set_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    threshold: i128,
+) {
+    WithdrawalThresholdSetEvent {
+        merchant_id,
+        token,
+        threshold,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct WithdrawalRecipientSetEvent {
+    pub merchant_id: u64,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_recipient_set_event(
+    env: &Env,
+    merchant_id: u64,
+    recipient: Address,
+) {
+    WithdrawalRecipientSetEvent {
+        merchant_id,
+        recipient,
+    }
+    .publish(env);
+}
+
+#[contractevent]
+pub struct AutoWithdrawalTriggeredEvent {
+    pub merchant_id: u64,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+}
+
+pub fn publish_auto_withdrawal_triggered_event(
+    env: &Env,
+    merchant_id: u64,
+    token: Address,
+    amount: i128,
+    recipient: Address,
+) {
+    AutoWithdrawalTriggeredEvent {
+        merchant_id,
+        token,
+        amount,
+        recipient,
+    }
+    .publish(env);
+}
+
+// ── Escrow expired-refund event ────────────────────────────────────────────────
+
 #[contractevent]
 pub struct EscrowExpiredRefundEvent {
     pub invoice_id: u64,
@@ -1089,215 +1401,6 @@ pub fn publish_escrow_expired_refund_event(
         invoice_id,
         buyer,
         amount,
-        token,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignCreatedEvent {
-    pub campaign_id: u64,
-    pub merchant: Address,
-    pub merchant_id: u64,
-    pub goal: i128,
-    pub token: Address,
-    pub deadline: u64,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_campaign_created_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant: Address,
-    merchant_id: u64,
-    goal: i128,
-    token: Address,
-    deadline: u64,
-    timestamp: u64,
-) {
-    CampaignCreatedEvent {
-        campaign_id,
-        merchant,
-        merchant_id,
-        goal,
-        token,
-        deadline,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignPledgedEvent {
-    pub campaign_id: u64,
-    pub merchant_id: u64,
-    pub backer: Address,
-    pub amount: i128,
-    pub raised: i128,
-    pub goal: i128,
-    pub token: Address,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_campaign_pledged_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant_id: u64,
-    backer: Address,
-    amount: i128,
-    raised: i128,
-    goal: i128,
-    token: Address,
-    timestamp: u64,
-) {
-    CampaignPledgedEvent {
-        campaign_id,
-        merchant_id,
-        backer,
-        amount,
-        raised,
-        goal,
-        token,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignFailedEvent {
-    pub campaign_id: u64,
-    pub merchant_id: u64,
-    pub raised: i128,
-    pub goal: i128,
-    pub token: Address,
-    pub timestamp: u64,
-}
-
-pub fn publish_campaign_failed_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant_id: u64,
-    raised: i128,
-    goal: i128,
-    token: Address,
-    timestamp: u64,
-) {
-    CampaignFailedEvent {
-        campaign_id,
-        merchant_id,
-        raised,
-        goal,
-        token,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignSucceededEvent {
-    pub campaign_id: u64,
-    pub merchant_id: u64,
-    pub merchant_account: Address,
-    pub raised: i128,
-    pub fee: i128,
-    pub merchant_amount: i128,
-    pub token: Address,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_campaign_succeeded_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant_id: u64,
-    merchant_account: Address,
-    raised: i128,
-    fee: i128,
-    merchant_amount: i128,
-    token: Address,
-    timestamp: u64,
-) {
-    CampaignSucceededEvent {
-        campaign_id,
-        merchant_id,
-        merchant_account,
-        raised,
-        fee,
-        merchant_amount,
-        token,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignRefundClaimedEvent {
-    pub campaign_id: u64,
-    pub merchant_id: u64,
-    pub backer: Address,
-    pub amount: i128,
-    pub total_refunded: i128,
-    pub token: Address,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_campaign_refund_claimed_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant_id: u64,
-    backer: Address,
-    amount: i128,
-    total_refunded: i128,
-    token: Address,
-    timestamp: u64,
-) {
-    CampaignRefundClaimedEvent {
-        campaign_id,
-        merchant_id,
-        backer,
-        amount,
-        total_refunded,
-        token,
-        timestamp,
-    }
-    .publish(env);
-}
-
-#[contractevent]
-pub struct CampaignRefundBatchEvent {
-    pub campaign_id: u64,
-    pub merchant_id: u64,
-    pub total_refunded: i128,
-    pub processed_count: u32,
-    pub next_cursor: u32,
-    pub status: u32,
-    pub token: Address,
-    pub timestamp: u64,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn publish_failed_campaign_refund_batch_event(
-    env: &Env,
-    campaign_id: u64,
-    merchant_id: u64,
-    total_refunded: i128,
-    processed_count: u32,
-    next_cursor: u32,
-    status: crate::types::CampaignStatus,
-    token: Address,
-    timestamp: u64,
-) {
-    CampaignRefundBatchEvent {
-        campaign_id,
-        merchant_id,
-        total_refunded,
-        processed_count,
-        next_cursor,
-        status: status as u32,
         token,
         timestamp,
     }

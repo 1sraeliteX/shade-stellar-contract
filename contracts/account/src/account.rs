@@ -1,10 +1,7 @@
 use crate::errors::ContractError;
 use crate::events::{
-    publish_account_initialized_event,
-    publish_account_restricted_event,
-    publish_account_verified_event,
-    publish_refund_processed_event,
-    publish_token_added_event,
+    publish_account_initialized_event, publish_account_restricted_event,
+    publish_account_verified_event, publish_refund_processed_event, publish_token_added_event,
     publish_withdrawal_to_event,
 };
 use crate::interface::MerchantAccountTrait;
@@ -31,7 +28,10 @@ fn get_tracked_tokens(env: &Env) -> Vec<Address> {
 }
 
 fn is_restricted_account(env: &Env) -> bool {
-    env.storage().persistent().get(&DataKey::Restricted).unwrap_or(false)
+    env.storage()
+        .persistent()
+        .get(&DataKey::Restricted)
+        .unwrap_or(false)
 }
 
 fn token_exists(tracked_tokens: &Vec<Address>, token: &Address) -> bool {
@@ -67,14 +67,18 @@ impl MerchantAccountTrait for MerchantAccount {
             merchant_id,
             date_created: env.ledger().timestamp(),
         };
-        env.storage().persistent().set(&DataKey::AccountInfo, &account_info);
-        env.storage().persistent().set(&DataKey::Merchant, &merchant);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AccountInfo, &account_info);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Merchant, &merchant);
         env.storage().persistent().set(&DataKey::Manager, &manager);
         publish_account_initialized_event(
             &env,
             merchant.clone(),
             merchant_id,
-            env.ledger().timestamp()
+            env.ledger().timestamp(),
         );
     }
     fn get_merchant(env: Env) -> Address {
@@ -94,7 +98,9 @@ impl MerchantAccountTrait for MerchantAccount {
         }
 
         tracked_tokens.push_back(token.clone());
-        env.storage().persistent().set(&DataKey::TrackedTokens, &tracked_tokens);
+        env.storage()
+            .persistent()
+            .set(&DataKey::TrackedTokens, &tracked_tokens);
         publish_token_added_event(&env, token, env.ledger().timestamp());
     }
 
@@ -152,14 +158,19 @@ impl MerchantAccountTrait for MerchantAccount {
     }
 
     fn is_verified_account(env: Env) -> bool {
-        env.storage().persistent().get(&DataKey::Verified).unwrap_or(false)
+        env.storage()
+            .persistent()
+            .get(&DataKey::Verified)
+            .unwrap_or(false)
     }
 
     fn restrict_account(env: Env, status: bool) {
         let manager = get_manager(&env);
         manager.require_auth();
 
-        env.storage().persistent().set(&DataKey::Restricted, &status);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Restricted, &status);
         publish_account_restricted_event(&env, status, env.ledger().timestamp());
     }
 
@@ -199,7 +210,9 @@ impl MerchantAccountTrait for MerchantAccount {
             env.storage()
                 .persistent()
                 .set(&DataKey::WithdrawalRequest(id), &request);
-            env.storage().persistent().set(&DataKey::WithdrawalCount, &id);
+            env.storage()
+                .persistent()
+                .set(&DataKey::WithdrawalCount, &id);
             return;
         }
 
@@ -209,11 +222,16 @@ impl MerchantAccountTrait for MerchantAccount {
     fn set_withdrawal_threshold(env: Env, threshold: i128) {
         let manager = get_manager(&env);
         manager.require_auth();
-        env.storage().persistent().set(&DataKey::Threshold, &threshold);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Threshold, &threshold);
     }
 
     fn get_withdrawal_threshold(env: Env) -> i128 {
-        env.storage().persistent().get(&DataKey::Threshold).unwrap_or(0)
+        env.storage()
+            .persistent()
+            .get(&DataKey::Threshold)
+            .unwrap_or(0)
     }
 
     fn approve_withdrawal(env: Env, request_id: u64) {
@@ -246,7 +264,12 @@ impl MerchantAccountTrait for MerchantAccount {
         // If we have 2 approvals (merchant initiated + manager approved), execute
         if request.approvals.len() >= 2 {
             request.status = WithdrawalStatus::Executed;
-            Self::execute_withdrawal_internal(&env, &request.token, request.amount, &request.recipient);
+            Self::execute_withdrawal_internal(
+                &env,
+                &request.token,
+                request.amount,
+                &request.recipient,
+            );
         }
 
         env.storage()

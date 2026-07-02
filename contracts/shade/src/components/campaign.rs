@@ -1,385 +1,409 @@
-use crate::components::{admin, merchant};
+use crate::components::{core, reentrancy};
 use crate::errors::ContractError;
 use crate::events;
-use crate::types::{Campaign, CampaignStatus, DataKey};
-use soroban_sdk::{panic_with_error, token, Address, Env, Vec};
+use crate::types::{Campaign, CampaignAffiliate, CampaignParticipant, DataKey};
+use soroban_sdk::{panic_with_error, Address, Env, String, Vec};
 
 pub fn create_campaign(
     env: &Env,
-    merchant_addr: &Address,
-    goal: i128,
-    token_addr: &Address,
-    deadline: u64,
+    caller: &Address,
+    name: &String,
+    charity: bool,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+    stake_required: i128,
 ) -> u64 {
-    merchant_addr.require_auth();
+    reentrancy::enter(env);
+    caller.require_auth();
 
-    if goal <= 0 {
+    if fee_waiver_bps > 10_000 || discount_bps > 10_000 {
         panic_with_error!(env, ContractError::InvalidAmount);
     }
-    if deadline <= env.ledger().timestamp() {
-        panic_with_error!(env, ContractError::InvoiceExpired);
-    }
-    if !admin::is_accepted_token(env, token_addr) {
-        panic_with_error!(env, ContractError::TokenNotAccepted);
-    }
-    if !merchant::is_token_accepted_for_merchant(env, merchant_addr, token_addr) {
-        panic_with_error!(env, ContractError::TokenNotAcceptedByMerchant);
+    if stake_required < 0 {
+        panic_with_error!(env, ContractError::InvalidAmount);
     }
 
-    let merchant_id = merchant::get_merchant_id(env, merchant_addr);
-    if !merchant::is_merchant_active(env, merchant_id) {
-        panic_with_error!(env, ContractError::MerchantNotActive);
-    }
-
-    let id = env
-        .storage()
-        .persistent()
-        .get(&DataKey::CampaignCount)
-        .unwrap_or(0u64)
-        + 1;
-
+    let campaign_id = get_campaign_count(env) + 1;
     let campaign = Campaign {
-        id,
-        merchant_id,
-        goal,
-        raised: 0,
-        token: token_addr.clone(),
-        deadline,
-        status: CampaignStatus::Active,
+        id: campaign_id,
+        owner: caller.clone(),
+        name: name.clone(),
+        charity,
+        fee_waiver_bps,
+        discount_bps,
+        stake_required,
+        total_raised: 0,
+        total_staked: 0,
+        total_slashed: 0,
+        total_commissions_paid: 0,
+        active: true,
         created_at: env.ledger().timestamp(),
-        finalized_at: None,
-        total_refunded: 0,
-        refund_count: 0,
     };
 
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
+    env.storage().persistent().set(&DataKey::CampaignCount, &campaign_id);
     env.storage()
         .persistent()
-        .set(&DataKey::Campaign(id), &campaign);
-    env.storage().persistent().set(&DataKey::CampaignCount, &id);
-    env.storage()
-        .persistent()
-        .set(&DataKey::CampaignBackers(id), &Vec::<Address>::new(env));
-    env.storage()
-        .persistent()
-        .set(&DataKey::CampaignRefundCursor(id), &0u32);
+        .set(&DataKey::CampaignParticipants(campaign_id), &Vec::<Address>::new(env));
 
     events::publish_campaign_created_event(
         env,
-        id,
-        merchant_addr.clone(),
-        merchant_id,
-        goal,
-        token_addr.clone(),
-        deadline,
+        campaign_id,
+        caller.clone(),
+        name.clone(),
+        charity,
+        fee_waiver_bps,
+        discount_bps,
         env.ledger().timestamp(),
     );
 
-    id
+    reentrancy::exit(env);
+    campaign_id
 }
 
-pub fn pledge_campaign(env: &Env, backer: &Address, campaign_id: u64, amount: i128) {
-    backer.require_auth();
+pub fn configure_campaign_fee_policy(
+    env: &Env,
+    caller: &Address,
+    campaign_id: u64,
+    fee_waiver_bps: u32,
+    discount_bps: u32,
+) {
+    reentrancy::enter(env);
+    caller.require_auth();
+
+    if fee_waiver_bps > 10_000 || discount_bps > 10_000 {
+        panic_with_error!(env, ContractError::InvalidAmount);
+    }
+
+    let mut campaign = get_campaign(env, campaign_id);
+    let admin = core::get_admin(env);
+    if *caller != campaign.owner && *caller != admin {
+        panic_with_error!(env, ContractError::NotAuthorized);
+    }
+
+    campaign.fee_waiver_bps = fee_waiver_bps;
+    campaign.discount_bps = discount_bps;
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
+
+    events::publish_campaign_fee_policy_configured_event(
+        env,
+        campaign_id,
+        caller.clone(),
+        fee_waiver_bps,
+        discount_bps,
+        env.ledger().timestamp(),
+    );
+    reentrancy::exit(env);
+}
+
+pub fn calculate_campaign_discounted_amount(env: &Env, campaign_id: u64, amount: i128) -> i128 {
+    if amount <= 0 {
+        return 0;
+    }
+
+    let campaign = get_campaign(env, campaign_id);
+    let waiver = (amount * i128::from(campaign.fee_waiver_bps)) / 10_000i128;
+    let discount = (amount * i128::from(campaign.discount_bps)) / 10_000i128;
+    amount - waiver - discount
+}
+
+pub fn record_campaign_contribution(env: &Env, caller: &Address, campaign_id: u64, amount: i128) {
+    reentrancy::enter(env);
+    caller.require_auth();
 
     if amount <= 0 {
         panic_with_error!(env, ContractError::InvalidAmount);
     }
 
     let mut campaign = get_campaign(env, campaign_id);
-    if campaign.status != CampaignStatus::Active {
-        panic_with_error!(env, ContractError::InvalidInvoiceStatus);
-    }
-    if env.ledger().timestamp() > campaign.deadline {
-        panic_with_error!(env, ContractError::InvoiceExpired);
-    }
-    if !admin::is_accepted_token(env, &campaign.token) {
-        panic_with_error!(env, ContractError::TokenNotAccepted);
-    }
+    let mut participant = get_participant(env, campaign_id, caller);
 
-    token::TokenClient::new(env, &campaign.token).transfer(
-        backer,
-        &env.current_contract_address(),
-        &amount,
-    );
+    campaign.total_raised += amount;
+    participant.contributed += amount;
+    participant.score += amount;
 
-    let pledge_key = DataKey::CampaignPledge(campaign_id, backer.clone());
-    let previous = env.storage().persistent().get(&pledge_key).unwrap_or(0i128);
-    env.storage()
-        .persistent()
-        .set(&pledge_key, &previous.saturating_add(amount));
+    store_participant(env, campaign_id, &participant);
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
 
-    if previous == 0 {
-        let backers_key = DataKey::CampaignBackers(campaign_id);
-        let mut backers: Vec<Address> = env
-            .storage()
-            .persistent()
-            .get(&backers_key)
-            .unwrap_or_else(|| Vec::new(env));
-        backers.push_back(backer.clone());
-        env.storage().persistent().set(&backers_key, &backers);
-    }
-
-    campaign.raised = campaign.raised.saturating_add(amount);
-    env.storage()
-        .persistent()
-        .set(&DataKey::Campaign(campaign_id), &campaign);
-
-    events::publish_campaign_pledged_event(
+    events::publish_campaign_contribution_recorded_event(
         env,
         campaign_id,
-        campaign.merchant_id,
-        backer.clone(),
+        caller.clone(),
         amount,
-        campaign.raised,
-        campaign.goal,
-        campaign.token.clone(),
+        campaign.total_raised,
         env.ledger().timestamp(),
     );
+    reentrancy::exit(env);
 }
 
-pub fn finalize_campaign(env: &Env, caller: &Address, campaign_id: u64) {
+pub fn stake_campaign(env: &Env, caller: &Address, campaign_id: u64, amount: i128) {
+    reentrancy::enter(env);
     caller.require_auth();
 
-    let mut campaign = get_campaign(env, campaign_id);
-    if campaign.status != CampaignStatus::Active {
-        panic_with_error!(env, ContractError::InvalidInvoiceStatus);
-    }
-    if env.ledger().timestamp() <= campaign.deadline {
-        panic_with_error!(env, ContractError::InvoiceNotPaid);
-    }
-
-    let merchant_addr = merchant_id_to_address(env, campaign.merchant_id);
-    if *caller != merchant_addr {
-        panic_with_error!(env, ContractError::NotAuthorized);
-    }
-
-    if campaign.raised >= campaign.goal {
-        release_successful_campaign(env, &mut campaign, merchant_addr);
-    } else {
-        campaign.status = CampaignStatus::Failed;
-        campaign.finalized_at = Some(env.ledger().timestamp());
-        env.storage()
-            .persistent()
-            .set(&DataKey::Campaign(campaign_id), &campaign);
-        events::publish_campaign_failed_event(
-            env,
-            campaign_id,
-            campaign.merchant_id,
-            campaign.raised,
-            campaign.goal,
-            campaign.token.clone(),
-            env.ledger().timestamp(),
-        );
-    }
-}
-
-pub fn claim_campaign_refund(env: &Env, backer: &Address, campaign_id: u64) -> i128 {
-    backer.require_auth();
-    refund_backer(env, campaign_id, backer)
-}
-
-pub fn process_failed_campaign_refunds(env: &Env, campaign_id: u64, limit: u32) -> (i128, u32) {
-    if limit == 0 {
+    if amount <= 0 {
         panic_with_error!(env, ContractError::InvalidAmount);
     }
 
-    let mut campaign = ensure_failed_campaign(env, campaign_id);
-    let backers: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get(&DataKey::CampaignBackers(campaign_id))
-        .unwrap_or_else(|| Vec::new(env));
-    let mut cursor: u32 = env
-        .storage()
-        .persistent()
-        .get(&DataKey::CampaignRefundCursor(campaign_id))
-        .unwrap_or(0u32);
-    let mut processed = 0u32;
-    let mut total_refunded = 0i128;
-    let token_client = token::TokenClient::new(env, &campaign.token);
-    let contract = env.current_contract_address();
+    let mut campaign = get_campaign(env, campaign_id);
+    let mut participant = get_participant(env, campaign_id, caller);
 
-    while cursor < backers.len() && processed < limit {
-        let backer = backers
-            .get(cursor)
-            .unwrap_or_else(|| panic_with_error!(env, ContractError::InvoiceNotFound));
-        let pledge_key = DataKey::CampaignPledge(campaign_id, backer.clone());
-        let pledge = env.storage().persistent().get(&pledge_key).unwrap_or(0i128);
+    participant.staked += amount;
+    participant.score += amount;
+    campaign.total_staked += amount;
 
-        if pledge > 0 {
-            env.storage().persistent().set(&pledge_key, &0i128);
-            token_client.transfer(&contract, &backer, &pledge);
-            campaign.total_refunded = campaign.total_refunded.saturating_add(pledge);
-            campaign.refund_count = campaign.refund_count.saturating_add(1);
-            total_refunded = total_refunded.saturating_add(pledge);
-            processed = processed.saturating_add(1);
+    store_participant(env, campaign_id, &participant);
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
 
-            events::publish_campaign_refund_claimed_event(
-                env,
-                campaign_id,
-                campaign.merchant_id,
-                backer,
-                pledge,
-                campaign.total_refunded,
-                campaign.token.clone(),
-                env.ledger().timestamp(),
-            );
-        }
-
-        cursor = cursor.saturating_add(1);
-    }
-
-    if cursor >= backers.len() {
-        campaign.status = CampaignStatus::Refunded;
-    }
-
-    env.storage()
-        .persistent()
-        .set(&DataKey::CampaignRefundCursor(campaign_id), &cursor);
-    env.storage()
-        .persistent()
-        .set(&DataKey::Campaign(campaign_id), &campaign);
-
-    events::publish_failed_campaign_refund_batch_event(
+    events::publish_campaign_staked_event(
         env,
         campaign_id,
-        campaign.merchant_id,
-        total_refunded,
-        processed,
-        cursor,
-        campaign.status,
-        campaign.token.clone(),
+        caller.clone(),
+        amount,
+        participant.staked,
         env.ledger().timestamp(),
     );
+    reentrancy::exit(env);
+}
 
-    (total_refunded, processed)
+pub fn slash_campaign_stake(
+    env: &Env,
+    caller: &Address,
+    campaign_id: u64,
+    participant_address: &Address,
+    amount: i128,
+) {
+    reentrancy::enter(env);
+    caller.require_auth();
+
+    if amount <= 0 {
+        panic_with_error!(env, ContractError::InvalidAmount);
+    }
+
+    let mut campaign = get_campaign(env, campaign_id);
+    let admin = core::get_admin(env);
+    if *caller != campaign.owner && *caller != admin {
+        panic_with_error!(env, ContractError::NotAuthorized);
+    }
+
+    let mut participant = get_participant(env, campaign_id, participant_address);
+    if participant.staked < amount {
+        panic_with_error!(env, ContractError::InvalidAmount);
+    }
+
+    participant.staked -= amount;
+    participant.slashed += amount;
+    participant.score -= amount;
+    campaign.total_staked -= amount;
+    campaign.total_slashed += amount;
+
+    store_participant(env, campaign_id, &participant);
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
+
+    events::publish_campaign_slashed_event(
+        env,
+        campaign_id,
+        participant_address.clone(),
+        amount,
+        participant.staked,
+        env.ledger().timestamp(),
+    );
+    reentrancy::exit(env);
+}
+
+pub fn register_affiliate(
+    env: &Env,
+    caller: &Address,
+    campaign_id: u64,
+    affiliate_address: &Address,
+    commission_bps: u32,
+) {
+    reentrancy::enter(env);
+    caller.require_auth();
+
+    if commission_bps > 10_000 {
+        panic_with_error!(env, ContractError::InvalidAmount);
+    }
+
+    let campaign = get_campaign(env, campaign_id);
+    let admin = core::get_admin(env);
+    if *caller != campaign.owner && *caller != admin {
+        panic_with_error!(env, ContractError::NotAuthorized);
+    }
+
+    let affiliate = CampaignAffiliate {
+        campaign_id,
+        affiliate: affiliate_address.clone(),
+        commission_bps,
+        total_paid: 0,
+        active: true,
+    };
+
+    env.storage().persistent().set(
+        &DataKey::CampaignAffiliate(campaign_id, affiliate_address.clone()),
+        &affiliate,
+    );
+
+    events::publish_affiliate_registered_event(
+        env,
+        campaign_id,
+        affiliate_address.clone(),
+        commission_bps,
+        env.ledger().timestamp(),
+    );
+    reentrancy::exit(env);
+}
+
+pub fn pay_affiliate_commission(
+    env: &Env,
+    caller: &Address,
+    campaign_id: u64,
+    affiliate_address: &Address,
+    amount: i128,
+) {
+    reentrancy::enter(env);
+    caller.require_auth();
+
+    if amount <= 0 {
+        panic_with_error!(env, ContractError::InvalidAmount);
+    }
+
+    let mut campaign = get_campaign(env, campaign_id);
+    let admin = core::get_admin(env);
+    if *caller != campaign.owner && *caller != admin {
+        panic_with_error!(env, ContractError::NotAuthorized);
+    }
+
+    let mut affiliate = env
+        .storage()
+        .persistent()
+        .get(&DataKey::CampaignAffiliate(campaign_id, affiliate_address.clone()))
+        .unwrap_or_else(|| panic_with_error!(env, ContractError::AffiliateNotFound));
+
+    affiliate.total_paid += amount;
+    campaign.total_commissions_paid += amount;
+
+    env.storage().persistent().set(
+        &DataKey::CampaignAffiliate(campaign_id, affiliate_address.clone()),
+        &affiliate,
+    );
+    env.storage().persistent().set(&DataKey::Campaign(campaign_id), &campaign);
+
+    events::publish_affiliate_commission_paid_event(
+        env,
+        campaign_id,
+        affiliate_address.clone(),
+        amount,
+        affiliate.total_paid,
+        env.ledger().timestamp(),
+    );
+    reentrancy::exit(env);
 }
 
 pub fn get_campaign(env: &Env, campaign_id: u64) -> Campaign {
     env.storage()
         .persistent()
         .get(&DataKey::Campaign(campaign_id))
-        .unwrap_or_else(|| panic_with_error!(env, ContractError::InvoiceNotFound))
+        .unwrap_or_else(|| panic_with_error!(env, ContractError::CampaignNotFound))
 }
 
-pub fn get_campaign_pledge(env: &Env, campaign_id: u64, backer: &Address) -> i128 {
+pub fn get_campaign_participant(env: &Env, campaign_id: u64, participant: &Address) -> CampaignParticipant {
+    get_participant(env, campaign_id, participant)
+}
+
+pub fn get_campaign_affiliate(env: &Env, campaign_id: u64, affiliate: &Address) -> CampaignAffiliate {
     env.storage()
         .persistent()
-        .get(&DataKey::CampaignPledge(campaign_id, backer.clone()))
+        .get(&DataKey::CampaignAffiliate(campaign_id, affiliate.clone()))
+        .unwrap_or_else(|| panic_with_error!(env, ContractError::AffiliateNotFound))
+}
+
+pub fn get_campaign_leaderboard(env: &Env, campaign_id: u64, limit: u32) -> Vec<(Address, i128)> {
+    let participant_ids = env
+        .storage()
+        .persistent()
+        .get(&DataKey::CampaignParticipants(campaign_id))
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut rows: Vec<(Address, i128)> = Vec::new(env);
+    for participant_id in participant_ids.iter() {
+        let participant = get_participant(env, campaign_id, &participant_id);
+        rows.push_back((participant_id.clone(), participant.score));
+    }
+
+    let n = rows.len();
+    let mut i: u32 = 1;
+    while i < n {
+        let mut j = i;
+        while j > 0 {
+            let prev = rows.get_unchecked(j - 1);
+            let curr = rows.get_unchecked(j);
+            if curr.1 > prev.1 {
+                rows.set(j - 1, curr);
+                rows.set(j, prev);
+                j -= 1;
+            } else {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    while rows.len() > limit {
+        rows.pop_back();
+    }
+    rows
+}
+
+fn get_campaign_count(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::CampaignCount)
         .unwrap_or(0)
 }
 
-fn refund_backer(env: &Env, campaign_id: u64, backer: &Address) -> i128 {
-    let mut campaign = ensure_failed_campaign(env, campaign_id);
-    let pledge_key = DataKey::CampaignPledge(campaign_id, backer.clone());
-    let pledge = env.storage().persistent().get(&pledge_key).unwrap_or(0i128);
-    if pledge <= 0 {
-        panic_with_error!(env, ContractError::InvalidAmount);
-    }
-
-    env.storage().persistent().set(&pledge_key, &0i128);
-    token::TokenClient::new(env, &campaign.token).transfer(
-        &env.current_contract_address(),
-        backer,
-        &pledge,
-    );
-
-    campaign.total_refunded = campaign.total_refunded.saturating_add(pledge);
-    campaign.refund_count = campaign.refund_count.saturating_add(1);
+fn get_participant(env: &Env, campaign_id: u64, participant: &Address) -> CampaignParticipant {
     env.storage()
         .persistent()
-        .set(&DataKey::Campaign(campaign_id), &campaign);
-
-    events::publish_campaign_refund_claimed_event(
-        env,
-        campaign_id,
-        campaign.merchant_id,
-        backer.clone(),
-        pledge,
-        campaign.total_refunded,
-        campaign.token.clone(),
-        env.ledger().timestamp(),
-    );
-
-    pledge
+        .get(&DataKey::CampaignParticipant(campaign_id, participant.clone()))
+        .unwrap_or(CampaignParticipant {
+            campaign_id,
+            participant: participant.clone(),
+            contributed: 0,
+            staked: 0,
+            slashed: 0,
+            commissions_paid: 0,
+            score: 0,
+        })
 }
 
-fn ensure_failed_campaign(env: &Env, campaign_id: u64) -> Campaign {
-    let mut campaign = get_campaign(env, campaign_id);
+fn store_participant(env: &Env, campaign_id: u64, participant: &CampaignParticipant) {
+    let participant_ids = env
+        .storage()
+        .persistent()
+        .get(&DataKey::CampaignParticipants(campaign_id))
+        .unwrap_or_else(|| Vec::new(env));
 
-    if campaign.status == CampaignStatus::Refunded {
-        return campaign;
-    }
-    if campaign.status == CampaignStatus::Successful {
-        panic_with_error!(env, ContractError::InvalidInvoiceStatus);
-    }
-    if env.ledger().timestamp() <= campaign.deadline {
-        panic_with_error!(env, ContractError::InvoiceNotPaid);
-    }
-    if campaign.raised >= campaign.goal {
-        panic_with_error!(env, ContractError::InvalidInvoiceStatus);
+    let mut exists = false;
+    for existing in participant_ids.iter() {
+        if existing == participant.participant {
+            exists = true;
+            break;
+        }
     }
 
-    if campaign.status == CampaignStatus::Active {
-        campaign.status = CampaignStatus::Failed;
-        campaign.finalized_at = Some(env.ledger().timestamp());
+    if !exists {
+        let mut updated_ids = Vec::new(env);
+        for existing in participant_ids.iter() {
+            updated_ids.push_back(existing);
+        }
+        updated_ids.push_back(participant.participant.clone());
         env.storage()
             .persistent()
-            .set(&DataKey::Campaign(campaign_id), &campaign);
-        events::publish_campaign_failed_event(
-            env,
-            campaign_id,
-            campaign.merchant_id,
-            campaign.raised,
-            campaign.goal,
-            campaign.token.clone(),
-            env.ledger().timestamp(),
-        );
+            .set(&DataKey::CampaignParticipants(campaign_id), &updated_ids);
     }
 
-    campaign
-}
-
-fn release_successful_campaign(env: &Env, campaign: &mut Campaign, merchant_addr: Address) {
-    let merchant_account = merchant::get_merchant_account(env, campaign.merchant_id);
-    let platform_account = admin::get_platform_account(env);
-    let fee = admin::calculate_fee(env, &merchant_addr, &campaign.token, campaign.raised);
-    if fee < 0 || fee >= campaign.raised {
-        panic_with_error!(env, ContractError::InvalidAmount);
-    }
-
-    let merchant_amount = campaign.raised - fee;
-    let token_client = token::TokenClient::new(env, &campaign.token);
-    let contract = env.current_contract_address();
-
-    if merchant_amount > 0 {
-        token_client.transfer(&contract, &merchant_account, &merchant_amount);
-    }
-    if fee > 0 {
-        token_client.transfer(&contract, &platform_account, &fee);
-    }
-
-    admin::record_merchant_payment(env, &merchant_addr, &campaign.token, campaign.raised, fee);
-
-    campaign.status = CampaignStatus::Successful;
-    campaign.finalized_at = Some(env.ledger().timestamp());
-    env.storage()
-        .persistent()
-        .set(&DataKey::Campaign(campaign.id), &*campaign);
-
-    events::publish_campaign_succeeded_event(
-        env,
-        campaign.id,
-        campaign.merchant_id,
-        merchant_account,
-        campaign.raised,
-        fee,
-        merchant_amount,
-        campaign.token.clone(),
-        env.ledger().timestamp(),
+    env.storage().persistent().set(
+        &DataKey::CampaignParticipant(campaign_id, participant.participant.clone()),
+        participant,
     );
-}
-
-fn merchant_id_to_address(env: &Env, merchant_id: u64) -> Address {
-    let merchant_record = merchant::get_merchant(env, merchant_id);
-    merchant_record.address
 }

@@ -1,4 +1,6 @@
 #![no_std]
+// Subscription/plan entrypoints legitimately take more than 7 arguments.
+#![allow(clippy::too_many_arguments)]
 
 mod errors;
 #[cfg(test)]
@@ -251,7 +253,12 @@ impl SubscriptionContract {
 
     /// Subscribe a customer to a plan with a preferred payment token.
     /// The token must be in the accepted-tokens list. Returns the new subscription ID.
-    pub fn subscribe_with_token(env: Env, customer: Address, plan_id: u64, preferred_token: Address) -> u64 {
+    pub fn subscribe_with_token(
+        env: Env,
+        customer: Address,
+        plan_id: u64,
+        preferred_token: Address,
+    ) -> u64 {
         customer.require_auth();
 
         let plan = load_plan(&env, plan_id);
@@ -292,7 +299,12 @@ impl SubscriptionContract {
 
     /// Update the preferred payment token for an existing subscription.
     /// Pass `None` to revert to the plan's default token.
-    pub fn set_preferred_token(env: Env, customer: Address, sub_id: u64, preferred_token: Option<Address>) {
+    pub fn set_preferred_token(
+        env: Env,
+        customer: Address,
+        sub_id: u64,
+        preferred_token: Option<Address>,
+    ) {
         customer.require_auth();
         let mut sub = load_subscription(&env, sub_id);
         if sub.customer != customer {
@@ -367,7 +379,8 @@ impl SubscriptionContract {
             plan_id: sub.plan_id,
             customer: sub.customer.clone(),
             timestamp: env.ledger().timestamp(),
-        }.publish(&env);
+        }
+        .publish(&env);
     }
 
     // ── Billing ───────────────────────────────────────────────────────────────
@@ -444,7 +457,8 @@ impl SubscriptionContract {
             plan = load_plan(&env, sub.plan_id);
         }
 
-        let token_client = token::TokenClient::new(&env, sub.preferred_token.as_ref().unwrap_or(&plan.token));
+        let token_client =
+            token::TokenClient::new(&env, sub.preferred_token.as_ref().unwrap_or(&plan.token));
         let spender = env.current_contract_address();
 
         let allowance = token_client.allowance(&sub.customer, &spender);
@@ -467,7 +481,8 @@ impl SubscriptionContract {
             plan_id: sub.plan_id,
             customer: sub.customer.clone(),
             timestamp: now,
-        }.publish(&env);
+        }
+        .publish(&env);
     }
 
     /// Forgiving variant of [`charge`]. Drives the subscription's billing
@@ -535,7 +550,8 @@ impl SubscriptionContract {
             plan_id: sub.plan_id,
             customer: sub.customer.clone(),
             timestamp: now,
-        }.publish(&env);
+        }
+        .publish(&env);
     }
 
     /// Cancel a subscription and refund the unused portion of the current
@@ -563,7 +579,7 @@ impl SubscriptionContract {
         let source = plan.creator.as_ref().unwrap_or(&plan.merchant);
         let is_customer = sub.customer == caller;
         let is_merchant = plan.merchant == caller;
-        let is_creator = plan.creator.as_ref().map_or(false, |c| c == &caller);
+        let is_creator = plan.creator.as_ref() == Some(&caller);
         if !is_customer && !is_merchant && !is_creator {
             panic_with_error!(&env, SubscriptionError::NotAuthorized);
         }
@@ -597,7 +613,8 @@ impl SubscriptionContract {
             plan_id: sub.plan_id,
             customer: sub.customer.clone(),
             timestamp: env.ledger().timestamp(),
-        }.publish(&env);
+        }
+        .publish(&env);
     }
 
     /// Read-only helper: how much would be refunded if the subscription
@@ -636,7 +653,10 @@ impl SubscriptionContract {
             upgrade_cost = 0;
         }
 
-        let token_client = token::TokenClient::new(&env, sub.preferred_token.as_ref().unwrap_or(&new_plan.token));
+        let token_client = token::TokenClient::new(
+            &env,
+            sub.preferred_token.as_ref().unwrap_or(&new_plan.token),
+        );
         let spender = env.current_contract_address();
 
         if upgrade_cost > 0 {
@@ -661,7 +681,8 @@ impl SubscriptionContract {
             plan_id: sub.plan_id,
             customer: sub.customer.clone(),
             timestamp: now,
-        }.publish(&env);
+        }
+        .publish(&env);
     }
 
     /// Schedule a deferred downgrade to be applied at the end of the current billing cycle.
@@ -730,7 +751,8 @@ fn step_billing_cycle(env: &Env, sub_id: u64) -> ChargeOutcome {
                     plan_id: sub.plan_id,
                     customer: sub.customer.clone(),
                     timestamp: now,
-                }.publish(env);
+                }
+                .publish(env);
 
                 ChargeOutcome::Charged
             } else if plan.grace_period == 0 {
@@ -745,7 +767,8 @@ fn step_billing_cycle(env: &Env, sub_id: u64) -> ChargeOutcome {
                     plan_id: sub.plan_id,
                     customer: sub.customer.clone(),
                     timestamp: now,
-                }.publish(env);
+                }
+                .publish(env);
 
                 ChargeOutcome::Terminated
             } else {
@@ -778,7 +801,8 @@ fn step_billing_cycle(env: &Env, sub_id: u64) -> ChargeOutcome {
                     plan_id: sub.plan_id,
                     customer: sub.customer.clone(),
                     timestamp: now,
-                }.publish(env);
+                }
+                .publish(env);
 
                 ChargeOutcome::Recovered
             } else if now > sub.past_due_since.saturating_add(plan.grace_period) {
@@ -793,7 +817,8 @@ fn step_billing_cycle(env: &Env, sub_id: u64) -> ChargeOutcome {
                     plan_id: sub.plan_id,
                     customer: sub.customer.clone(),
                     timestamp: now,
-                }.publish(env);
+                }
+                .publish(env);
 
                 ChargeOutcome::Terminated
             } else {

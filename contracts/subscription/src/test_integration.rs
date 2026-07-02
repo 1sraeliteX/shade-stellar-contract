@@ -55,7 +55,15 @@ fn setup() -> Fixture<'static> {
         &0,
     );
 
-    Fixture { env, contract, client, merchant, customer, token, plan_id }
+    Fixture {
+        env,
+        contract,
+        client,
+        merchant,
+        customer,
+        token,
+        plan_id,
+    }
 }
 
 fn fund(env: &Env, token: &Address, to: &Address, amount: i128) {
@@ -99,7 +107,11 @@ fn test_six_monthly_cycles_end_to_end() {
 
     for cycle in 1..=6u64 {
         let outcomes = f.client.process_billing_cycle(&ids);
-        assert_eq!(outcomes.get(0).unwrap(), ChargeOutcome::Charged, "cycle {cycle}");
+        assert_eq!(
+            outcomes.get(0).unwrap(),
+            ChargeOutcome::Charged,
+            "cycle {cycle}"
+        );
         advance(&f.env, MONTHLY);
     }
 
@@ -141,7 +153,8 @@ fn test_multi_subscriber_cyclical_billing() {
 fn test_grace_recovery_within_cyclical_billing() {
     let f = setup();
     // Set a 7-day grace period.
-    f.client.set_plan_grace_period(&f.merchant, &f.plan_id, &(7 * 86_400));
+    f.client
+        .set_plan_grace_period(&f.merchant, &f.plan_id, &(7 * 86_400));
 
     let sub_id = f.client.subscribe(&f.customer, &f.plan_id);
     let ids = batch(&f.env, &[sub_id]);
@@ -149,11 +162,17 @@ fn test_grace_recovery_within_cyclical_billing() {
     // Cycle 1: funded → Charged.
     fund(&f.env, &f.token, &f.customer, PLAN_AMOUNT);
     approve(&f.env, &f.token, &f.customer, &f.contract, PLAN_AMOUNT);
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::Charged);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::Charged
+    );
     advance(&f.env, MONTHLY);
 
     // Cycle 2: no allowance → EnteredGrace.
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::EnteredGrace);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::EnteredGrace
+    );
 
     // Customer tops up within grace window.
     advance(&f.env, 86_400); // 1 day into grace
@@ -161,7 +180,10 @@ fn test_grace_recovery_within_cyclical_billing() {
     approve(&f.env, &f.token, &f.customer, &f.contract, PLAN_AMOUNT);
 
     // Cycle 2 retry: Recovered.
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::Recovered);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::Recovered
+    );
     assert_eq!(
         f.client.get_subscription(&sub_id).status,
         SubscriptionStatus::Active
@@ -174,23 +196,33 @@ fn test_grace_recovery_within_cyclical_billing() {
 #[test]
 fn test_grace_expiry_terminates_subscription_in_cycle() {
     let f = setup();
-    f.client.set_plan_grace_period(&f.merchant, &f.plan_id, &86_400);
+    f.client
+        .set_plan_grace_period(&f.merchant, &f.plan_id, &86_400);
 
     let sub_id = f.client.subscribe(&f.customer, &f.plan_id);
     let ids = batch(&f.env, &[sub_id]);
 
     // No allowance → EnteredGrace.
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::EnteredGrace);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::EnteredGrace
+    );
 
     // Advance past grace window without recovery.
     advance(&f.env, 86_401);
 
     // Scheduler fires again → Terminated.
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::Terminated);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::Terminated
+    );
 
     // All subsequent passes → Skipped.
     advance(&f.env, MONTHLY);
-    assert_eq!(f.client.process_billing_cycle(&ids).get(0).unwrap(), ChargeOutcome::Skipped);
+    assert_eq!(
+        f.client.process_billing_cycle(&ids).get(0).unwrap(),
+        ChargeOutcome::Skipped
+    );
 }
 
 /// Mixed batch: some subscribers active, one cancelled, one past-due.
@@ -198,7 +230,8 @@ fn test_grace_expiry_terminates_subscription_in_cycle() {
 #[test]
 fn test_mixed_batch_cyclical_sweep() {
     let f = setup();
-    f.client.set_plan_grace_period(&f.merchant, &f.plan_id, &86_400);
+    f.client
+        .set_plan_grace_period(&f.merchant, &f.plan_id, &86_400);
 
     let customer_a = Address::generate(&f.env); // will charge
     let customer_b = Address::generate(&f.env); // will be cancelled
@@ -229,7 +262,8 @@ fn test_multi_token_subscriber_in_cyclical_billing() {
 
     // Register a second accepted token.
     let token2_admin = Address::generate(&f.env);
-    let token2 = f.env
+    let token2 = f
+        .env
         .register_stellar_asset_contract_v2(token2_admin)
         .address();
     f.client.add_accepted_token(&token2);
@@ -238,12 +272,18 @@ fn test_multi_token_subscriber_in_cyclical_billing() {
     fund(&f.env, &token2, &f.customer, PLAN_AMOUNT * 3);
     approve(&f.env, &token2, &f.customer, &f.contract, PLAN_AMOUNT * 3);
 
-    let sub_id = f.client.subscribe_with_token(&f.customer, &f.plan_id, &token2);
+    let sub_id = f
+        .client
+        .subscribe_with_token(&f.customer, &f.plan_id, &token2);
     let ids = batch(&f.env, &[sub_id]);
 
     for cycle in 1..=3u64 {
         let outcomes = f.client.process_billing_cycle(&ids);
-        assert_eq!(outcomes.get(0).unwrap(), ChargeOutcome::Charged, "cycle {cycle}");
+        assert_eq!(
+            outcomes.get(0).unwrap(),
+            ChargeOutcome::Charged,
+            "cycle {cycle}"
+        );
         advance(&f.env, MONTHLY);
     }
 
