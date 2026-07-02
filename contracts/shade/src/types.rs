@@ -1,10 +1,8 @@
-use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
-    Admin,
-    PendingAdmin,
-    Paused,
     FeeInBasisPoints(Address),
     FeeAmount(Address),
     ContractInfo,
@@ -36,7 +34,11 @@ pub enum DataKey {
     MerchantAnalytics(Address, Address),
     MerchantAnalyticsSummary(Address),
     PlatformAccount,
+    /// Per-merchant platform fee override in basis points for a token.
+    MerchantPlatformFee(u64, Address),
     TokenOracle(Address),
+    MerchantAutoWithdrawalThreshold(u64, Address),
+    MerchantAutoWithdrawalRecipient(u64),
     // --- Event system ---
     Event(u64),
     EventCount,
@@ -72,6 +74,52 @@ pub enum DataKey {
     MerchantCampaigns(u64),
     /// Reverse index: campaign_id -> ordered list of attached tag IDs.
     CampaignTagList(u64),
+    // --- Cross-chain pledge system ---
+    CrossChainPledge(u64),
+    CrossChainPledgeCount,
+    PledgeIdBySourceChain(String, u64), // source_chain, source_pledge_id
+    // --- Multi-sig massive withdrawal ---
+    /// Threshold (in token base units) above which a withdrawal requires multi-sig approval.
+    MultiSigThreshold(Address),
+    /// Ordered list of addresses that are registered as multi-sig signers.
+    MultiSigSigners,
+    /// Required number of approvals before a pending withdrawal can execute.
+    MultiSigQuorum,
+    /// A specific pending withdrawal proposal, keyed by proposal ID.
+    WithdrawalProposal(u64),
+    /// Running counter for withdrawal proposal IDs.
+    WithdrawalProposalCount,
+    /// Whether a particular signer has approved a particular proposal.
+    WithdrawalApproval(u64, Address),
+    // --- Escrow system ---
+    Escrow(u64),
+    EscrowCount,
+    // --- Campaign fundraising engine ---
+    Campaign(u64),
+    CampaignCount,
+    CampaignParticipants(u64),
+    CampaignParticipant(u64, Address),
+    CampaignAffiliate(u64, Address),
+    // --- NFT reward system ---
+    NftCollection(u64),
+    NftCollectionCount,
+    Nft(u64),
+    NftCount,
+    CollectionNfts(u64),
+    UserNfts(Address),
+    NftClaimed(u64, Address),
+    // --- Auto-withdrawal ---
+    MerchantAutoWithdrawalThreshold(u64, Address),
+    MerchantAutoWithdrawalRecipient(u64),
+    // --- Backer rewards (crowdfunding tiers & perks) ---
+    BackerCampaign(u64),
+    BackerCampaignCount,
+    BackerRewardTiers(u64),
+    BackerPledge(u64, Address),
+    BackerSelectedTier(u64, Address),
+    BackerRewardFulfilled(u64, Address),
+    BackerPerkClaimed(u64, Address, u32),
+    BackerTierBackerCount(u64, u32),
 }
 
 #[contracttype]
@@ -91,6 +139,11 @@ pub struct Merchant {
     pub date_registered: u64,
     pub account: Address,
     pub webhook: String,
+    /// Optional recipient for auto-withdrawals. Defaults to the merchant
+    /// address when unset.
+    pub auto_withdrawal_recipient: Option<Address>,
+    /// Per-token auto-withdrawal thresholds.
+    pub auto_withdrawal_thresholds: Vec<AutoWithdrawalThreshold>,
 }
 
 #[contracttype]
@@ -217,6 +270,32 @@ pub struct MerchantAnalyticsSummary {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CrossChainPledgeStatus {
+    Pending,
+    Completed,
+    Failed,
+    Refunded,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CrossChainPledge {
+    pub id: u64,
+    pub source_chain: String,
+    pub source_pledge_id: u64,
+    pub destination_chain: String,
+    pub merchant: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: CrossChainPledgeStatus,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub memo: Option<String>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CrossChainBridgePayload {
     pub invoice_id: u64,
     pub merchant: Address,
@@ -227,6 +306,23 @@ pub struct CrossChainBridgePayload {
     pub amount: i128,
     pub destination_recipient: String,
     pub memo: Option<String>,
+}
+
+/// A confirmed external-chain deposit recorded by an authorized bridge listener.
+///
+/// The `source_tx_id` is the 32-byte transaction hash on the origin chain and
+/// doubles as the global idempotency key (see `DataKey::ProcessedBridgeDeposit`).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BridgeDeposit {
+    pub id: u64,
+    pub source_chain: String,
+    pub source_tx_id: BytesN<32>,
+    pub listener: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub recipient: Address,
+    pub timestamp: u64,
 }
 
 // ── Time-locked fee update ────────────────────────────────────────────────────
@@ -324,6 +420,31 @@ pub enum EventStatus {
 }
 
 #[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EscrowStatus {
+    Created = 0,
+    Funded = 1,
+    Released = 2,
+    Refunded = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Escrow {
+    pub id: u64,
+    pub buyer: Address,
+    pub seller: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: EscrowStatus,
+    pub invoice_id: Option<u64>,
+    pub date_created: u64,
+    pub date_funded: Option<u64>,
+    pub date_released: Option<u64>,
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Event {
     pub id: u64,
@@ -361,6 +482,47 @@ pub struct Ticket {
     pub purchase_price: i128,
 }
 
+// ── Campaign announcements (Issue #335) ──────────────────────────────────────
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum CampaignStatus {
+    Active = 0,
+    Ended = 1,
+    Cancelled = 2,
+}
+
+/// On-chain fundraising / promotional campaign created by a merchant.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Campaign {
+    pub id: u64,
+    pub merchant_id: u64,
+    pub merchant: Address,
+    pub title: String,
+    pub description: String,
+    /// Fundraising goal in token base units. 0 = open-ended (no specific goal).
+    pub goal_amount: i128,
+    pub token: Address,
+    pub status: CampaignStatus,
+    pub created_at: u64,
+    pub updated_at: u64,
+    /// Unix timestamp when the campaign stops accepting new backers.
+    pub end_date: u64,
+}
+
+/// A timestamped update / news post published by the merchant on an active campaign.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CampaignAnnouncement {
+    pub id: u64,
+    pub campaign_id: u64,
+    pub title: String,
+    pub content: String,
+    pub posted_at: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaymentRoute {
@@ -373,6 +535,24 @@ pub enum PaymentRoute {
 pub struct SwapRoute {
     pub router: Address,
     pub path: Vec<Address>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlatformFeeSplit {
+    pub gross_amount: i128,
+    pub platform_fee: i128,
+    pub merchant_amount: i128,
+    pub fee_bps_applied: i128,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum PlatformFeeRouteKind {
+    Invoice = 0,
+    Subscription = 1,
+    TicketPurchase = 2,
 }
 
 #[contracttype]
@@ -405,6 +585,144 @@ pub struct CampaignTag {
     pub timestamp: u64,
 }
 
+// ── Multi-sig massive withdrawal ──────────────────────────────────────────────
+
+/// Current lifecycle state of a withdrawal proposal.
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum WithdrawalProposalStatus {
+    /// Awaiting the required number of signer approvals.
+    Pending = 0,
+    /// Quorum reached; funds have been transferred.
+    Executed = 1,
+    /// Cancelled by the proposer or an admin before execution.
+    Cancelled = 2,
+}
+
+/// A pending or completed massive-withdrawal proposal.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalProposal {
+    /// Unique, auto-incremented identifier.
+    pub id: u64,
+    /// Merchant whose balance is being withdrawn.
+    pub merchant: Address,
+    /// Token to withdraw.
+    pub token: Address,
+    /// Amount requested (in token base units).
+    pub amount: i128,
+    /// Destination address for the funds.
+    pub recipient: Address,
+    /// Number of approvals collected so far.
+    pub approvals: u32,
+    /// Current lifecycle status.
+    pub status: WithdrawalProposalStatus,
+    /// Ledger timestamp when the proposal was created.
+    pub created_at: u64,
+    /// Ledger timestamp of the last status change (approval/execution/cancellation).
+    pub updated_at: u64,
+    /// Optional human-readable note attached by the proposer.
+    pub note: soroban_sdk::String,
+}
+
+/// Runtime configuration for the multi-sig guard.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MultiSigConfig {
+    /// Minimum withdrawal amount that triggers multi-sig review (per token).
+    /// A value of 0 means multi-sig is disabled for that token.
+    pub threshold: i128,
+    /// Addresses authorised to approve withdrawal proposals.
+    pub signers: soroban_sdk::Vec<Address>,
+    /// Number of approvals required to execute a proposal.
+    pub quorum: u32,
+}
+
+// ── On-chain search and filtering utilities ───────────────────────────────────
+
+/// Filter parameters for querying subscription plans.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionPlanFilter {
+    /// Restrict to plans owned by this merchant address.
+    pub merchant: Option<Address>,
+    /// Restrict to active (`true`) or inactive (`false`) plans.
+    pub active: Option<bool>,
+    /// Restrict to plans billed in this token.
+    pub token: Option<Address>,
+}
+
+/// Filter parameters for querying individual subscriptions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SubscriptionFilter {
+    /// Restrict to subscriptions belonging to this plan.
+    pub plan_id: Option<u64>,
+    /// Restrict to subscriptions held by this customer address.
+    pub customer: Option<Address>,
+    /// Restrict to Active (0) or Cancelled (1) subscriptions.
+    pub status: Option<u32>,
+}
+
+/// Filter parameters for querying on-chain events (ticketing).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventFilter {
+    /// Restrict to events owned by this merchant address.
+    pub merchant: Option<Address>,
+    /// When `true` only cancelled events are returned; `false` for active ones.
+    pub cancelled: Option<bool>,
+    /// Earliest `event_date` (unix seconds) to include.
+    pub start_date: Option<u64>,
+    /// Latest `event_date` (unix seconds) to include.
+    pub end_date: Option<u64>,
+    /// Only include events with at least this many remaining seats.
+    pub min_available: Option<u32>,
+}
+
+/// Filter parameters for querying withdrawal proposals.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WithdrawalProposalFilter {
+    /// Restrict to proposals opened by this merchant address.
+    pub merchant: Option<Address>,
+    /// Restrict by proposal status (0=Pending, 1=Executed, 2=Cancelled).
+    pub status: Option<u32>,
+    /// Restrict to proposals for this token.
+    pub token: Option<Address>,
+    /// Only include proposals created at or after this timestamp.
+    pub created_after: Option<u64>,
+}
+
+/// A page of results together with cursor metadata for keyset pagination.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PageInfo {
+    /// Total items returned in this page.
+    pub count: u32,
+    /// ID of the last item in this page; pass as `cursor` in the next call.
+    /// `0` indicates there are no more pages.
+    pub next_cursor: u64,
+    /// Whether more pages follow.
+    pub has_next_page: bool,
+}
+
+/// A paginated slice of invoices.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvoicePage {
+    pub items: soroban_sdk::Vec<Invoice>,
+    pub page_info: PageInfo,
+}
+
+/// A paginated slice of merchants.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantPage {
+    pub items: soroban_sdk::Vec<Merchant>,
+    pub page_info: PageInfo,
+// --- Campaign fundraising engine ---
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Campaign {
@@ -430,4 +748,42 @@ pub struct CampaignFilter {
     pub category_id: Option<u64>,
     pub tag_id: Option<u64>,
     pub merchant_id: Option<u64>,
+}
+
+/// Singleton governance configuration and counters. `voting_period == 0` is the
+/// sentinel for "not yet configured".
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GovState {
+    pub voting_period: u64,
+    pub quorum_bps: u32,
+    pub member_count: u32,
+    pub proposal_count: u64,
+}
+
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProposalStatus {
+    /// Open for voting.
+    Active = 0,
+    /// Passed quorum + majority and the upgrade was applied.
+    Executed = 1,
+    /// Failed quorum or majority after the voting window closed.
+    Defeated = 2,
+}
+
+/// A council-governed proposal to upgrade the contract's WASM to `wasm_hash`.
+/// Voting is one-member-one-vote; `approvals`/`rejections` are head counts.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub wasm_hash: BytesN<32>,
+    pub created_at: u64,
+    pub voting_ends_at: u64,
+    pub approvals: u32,
+    pub rejections: u32,
+    pub status: ProposalStatus,
 }

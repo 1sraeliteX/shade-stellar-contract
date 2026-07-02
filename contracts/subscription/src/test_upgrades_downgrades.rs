@@ -1,6 +1,6 @@
 use super::*;
 use crate::types::ChargeOutcome;
-use soroban_sdk::testutils::{Address as _, Ledger as _, Events as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
 use soroban_sdk::{Address, Env, String, Symbol, TryIntoVal};
 
@@ -154,8 +154,14 @@ fn test_refund_pulled_from_creator() {
     // Cancel with refund
     f.client.cancel_with_prorated_refund(&f.customer, &sub_id);
 
-    assert_eq!(balance(&f.env, &f.token, &f.customer), customer_before + PLAN_AMOUNT);
-    assert_eq!(balance(&f.env, &f.token, &f.creator), creator_before - PLAN_AMOUNT);
+    assert_eq!(
+        balance(&f.env, &f.token, &f.customer),
+        customer_before + PLAN_AMOUNT
+    );
+    assert_eq!(
+        balance(&f.env, &f.token, &f.creator),
+        creator_before - PLAN_AMOUNT
+    );
 }
 
 // ── Webhook / Event Triggers Tests ─────────────────────────────────────────────
@@ -229,7 +235,8 @@ fn test_instant_upgrade_cost_calculation_and_execution() {
     let customer_before = balance(&f.env, &f.token, &f.customer); // 9_000
     let merchant_before = balance(&f.env, &f.token, &f.merchant); // 1_000
 
-    f.client.upgrade_subscription(&f.customer, &sub_id, &f.plan_premium_id);
+    f.client
+        .upgrade_subscription(&f.customer, &sub_id, &f.plan_premium_id);
 
     // Premium plan is now active
     let sub = f.client.get_subscription(&sub_id);
@@ -255,7 +262,8 @@ fn test_deferred_downgrade_execution() {
     f.client.charge(&sub_id); // Charged premium (3_000)
 
     // Schedule downgrade to standard (1_000)
-    f.client.downgrade_subscription(&f.customer, &sub_id, &f.plan_standard_id);
+    f.client
+        .downgrade_subscription(&f.customer, &sub_id, &f.plan_standard_id);
 
     // Plan should still be premium before cycle ends
     let sub = f.client.get_subscription(&sub_id);
@@ -271,7 +279,10 @@ fn test_deferred_downgrade_execution() {
     // Verify downgraded and standard amount charged
     let sub_after = f.client.get_subscription(&sub_id);
     assert_eq!(sub_after.plan_id, f.plan_standard_id);
-    assert_eq!(balance(&f.env, &f.token, &f.merchant), merchant_before + PLAN_AMOUNT);
+    assert_eq!(
+        balance(&f.env, &f.token, &f.merchant),
+        merchant_before + PLAN_AMOUNT
+    );
 }
 
 // ── Trial Period Tests ─────────────────────────────────────────────────────────
