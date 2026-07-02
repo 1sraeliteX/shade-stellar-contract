@@ -2,6 +2,7 @@
 
 use crate::shade::{Shade, ShadeClient};
 use crate::types::InvoiceStatus;
+use account::account::{MerchantAccount, MerchantAccountClient};
 use soroban_sdk::testutils::{Address as _, Events as _};
 use soroban_sdk::{token, Address, Env, String};
 
@@ -14,7 +15,10 @@ fn setup_test_with_auto_withdrawal() -> (
     Address,
 ) {
     let env = Env::default();
-    env.mock_all_auths();
+    // Auto-withdrawal sweeps funds via a `withdraw_to` call that the merchant
+    // account authorizes deep in the payment call tree (non-root), so allow
+    // non-root auth here.
+    env.mock_all_auths_allowing_non_root_auth();
 
     // Register Shade contract
     let shade_contract_id = env.register(Shade, ());
@@ -38,7 +42,21 @@ fn setup_test_with_auto_withdrawal() -> (
     let merchant = Address::generate(&env);
     shade_client.register_merchant(&merchant);
 
-    (env, shade_client, shade_contract_id, admin, merchant, token.address())
+    // Deploy + link a real merchant-account contract so payments can settle and
+    // auto-withdrawal can sweep funds out via `withdraw_to`.
+    let merchant_account_id = env.register(MerchantAccount, ());
+    let merchant_account = MerchantAccountClient::new(&env, &merchant_account_id);
+    merchant_account.initialize(&merchant, &shade_contract_id, &1_u64);
+    shade_client.set_merchant_account(&merchant, &merchant_account_id);
+
+    (
+        env,
+        shade_client,
+        shade_contract_id,
+        admin,
+        merchant,
+        token.address(),
+    )
 }
 
 #[test]
@@ -108,10 +126,10 @@ fn test_auto_withdrawal_triggered_on_payment() {
     let invoice_amount = 10_000i128;
     let invoice_id = shade_client.create_invoice(
         &merchant,
-        String::from_slice(&env, "Test Invoice"),
-        invoice_amount,
-        token.clone(),
-        None,
+        &String::from_str(&env, "Test Invoice"),
+        &invoice_amount,
+        &token,
+        &None,
     );
 
     // Payer pays the invoice
@@ -128,7 +146,10 @@ fn test_auto_withdrawal_triggered_on_payment() {
 
     // Verify recipient received funds (should be ~9500 after fee)
     let recipient_balance = token_client.balance(&recipient);
-    assert!(recipient_balance > 0, "Recipient should have received funds");
+    assert!(
+        recipient_balance > 0,
+        "Recipient should have received funds"
+    );
 }
 
 #[test]
@@ -148,10 +169,10 @@ fn test_auto_withdrawal_not_triggered_below_threshold() {
     let invoice_amount = 5_000i128;
     let invoice_id = shade_client.create_invoice(
         &merchant,
-        String::from_slice(&env, "Small Invoice"),
-        invoice_amount,
-        token.clone(),
-        None,
+        &String::from_str(&env, "Small Invoice"),
+        &invoice_amount,
+        &token,
+        &None,
     );
 
     // Payer pays the invoice
@@ -183,10 +204,10 @@ fn test_auto_withdrawal_uses_merchant_address_as_default_recipient() {
     let invoice_amount = 10_000i128;
     let invoice_id = shade_client.create_invoice(
         &merchant,
-        String::from_slice(&env, "Test Invoice"),
-        invoice_amount,
-        token.clone(),
-        None,
+        &String::from_str(&env, "Test Invoice"),
+        &invoice_amount,
+        &token,
+        &None,
     );
 
     // Payer pays the invoice

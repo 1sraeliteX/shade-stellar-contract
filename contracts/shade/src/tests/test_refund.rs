@@ -332,6 +332,10 @@ fn test_partial_refund_with_fee() {
     client.add_accepted_token(&admin, &token);
     client.set_fee(&admin, &token, &500); // 5% fee
 
+    // Route platform fees to the contract itself so this test can read the fee
+    // off `shade_id`.
+    client.set_platform_account(&admin, &shade_id);
+
     let merchant = Address::generate(&env);
     client.register_merchant(&merchant);
 
