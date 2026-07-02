@@ -1,8 +1,8 @@
-use crate::components::{admin, history, merchant};
+use crate::components::{admin, history, merchant, platform_fee};
 use crate::errors::ContractError;
 use crate::events;
-use crate::types::{DataKey, Subscription, SubscriptionPlan, SubscriptionStatus, Transaction, TransactionType};
-use soroban_sdk::{panic_with_error, token, Address, Env, String};
+use crate::types::{DataKey, PlatformFeeRouteKind, Subscription, SubscriptionPlan, SubscriptionStatus, Transaction, TransactionType};
+use soroban_sdk::{panic_with_error, Address, Env, String};
 
 // TODO: create a functionality for bulk subscription plan charging
 // TODO: create a functionality for charging all the subscription in a plan
@@ -142,19 +142,19 @@ pub fn charge_subscription(env: &Env, subscription_id: u64) {
         panic_with_error!(env, ContractError::ChargeTooEarly);
     }
 
-    let fee = admin::calculate_fee(env, &plan.merchant, &plan.token, plan.amount);
-    let merchant_amount = plan.amount - fee;
-
-    let token_client = token::TokenClient::new(env, &plan.token);
     let merchant_account = merchant::get_merchant_account(env, plan.merchant_id);
-    let platform_account = admin::get_platform_account(env);
-    let spender = env.current_contract_address();
-
-    token_client.transfer_from(&spender, &sub.customer, &merchant_account, &merchant_amount);
-    if fee > 0 {
-        token_client.transfer_from(&spender, &sub.customer, &platform_account, &fee);
-    }
-    admin::record_merchant_payment(env, &plan.merchant, &plan.token, plan.amount, fee);
+    let split = platform_fee::route_from_allowance(
+        env,
+        &sub.customer,
+        &plan.merchant,
+        &merchant_account,
+        &plan.token,
+        plan.amount,
+        PlatformFeeRouteKind::Subscription,
+        subscription_id,
+        plan.merchant_id,
+    );
+    let fee = split.platform_fee;
 
     sub.last_charged = now;
     env.storage()
