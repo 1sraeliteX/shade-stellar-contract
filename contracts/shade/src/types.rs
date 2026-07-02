@@ -49,6 +49,10 @@ pub enum DataKey {
     // --- Global token analytics ---
     TokenAnalytics(Address),
     TokenVolume(Address),
+    // --- Cross-chain pledge system ---
+    CrossChainPledge(u64),
+    CrossChainPledgeCount,
+    PledgeIdBySourceChain(String, u64), // source_chain, source_pledge_id
     // --- Multi-sig massive withdrawal ---
     /// Threshold (in token base units) above which a withdrawal requires multi-sig approval.
     MultiSigThreshold(Address),
@@ -237,6 +241,32 @@ pub struct MerchantAnalyticsSummary {
     pub total_fees: i128,
     pub transaction_count: u64,
     pub last_updated: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CrossChainPledgeStatus {
+    Pending,
+    Completed,
+    Failed,
+    Refunded,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CrossChainPledge {
+    pub id: u64,
+    pub source_chain: String,
+    pub source_pledge_id: u64,
+    pub destination_chain: String,
+    pub merchant: Address,
+    pub payer: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub status: CrossChainPledgeStatus,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub memo: Option<String>,
 }
 
 #[contracttype]

@@ -22,5 +22,4 @@ pub mod upgrade;
 pub mod escrow;
 pub mod backer_rewards;
 pub mod event;
-pub mod campaign;
-pub mod nft;
+pub mod cross_chain_pledge;

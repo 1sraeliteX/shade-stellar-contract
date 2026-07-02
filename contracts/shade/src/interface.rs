@@ -1,4 +1,7 @@
 use crate::types::{
+    CrossChainBridgePayload, CrossChainPledge, CrossChainPledgeStatus, Event, Invoice, InvoiceFilter, Merchant, MerchantAnalytics,
+    MerchantAnalyticsSummary, MerchantFilter, OracleConfig, PaymentPayload, PendingFee, Role,
+    Subscription, SubscriptionPlan, Ticket, TokenAnalytics, Transaction
     CrossChainBridgePayload, Event, EventFilter, Invoice, InvoiceFilter, InvoicePage, Merchant,
     MerchantFilter, MerchantPage, MerchantAnalytics, MerchantAnalyticsSummary, OracleConfig,
     PaymentPayload, PendingFee, Role, Subscription, SubscriptionFilter, SubscriptionPlan,
@@ -493,56 +496,33 @@ pub trait ShadeTrait {
     /// Create a crowdfunding campaign for tiered backer rewards.
     fn create_backer_campaign(
         env: Env,
+        source_chain: String,
+        source_pledge_id: u64,
+        destination_chain: String,
         merchant: Address,
-        name: String,
+        payer: Address,
         token: Address,
-        deadline: u64,
+        amount: i128,
+        memo: Option<String>,
     ) -> u64;
 
-    fn get_backer_campaign(env: Env, campaign_id: u64) -> BackerCampaign;
-
-    /// Define reward tiers with perks. Tiers must have ascending `min_pledge`.
-    fn set_backer_reward_tiers(
+    /// Update the status of a cross-chain pledge
+    fn update_cross_chain_pledge_status(
         env: Env,
-        merchant: Address,
-        campaign_id: u64,
-        tiers: Vec<BackerRewardTier>,
+        pledge_id: u64,
+        new_status: CrossChainPledgeStatus,
     );
 
-    fn get_backer_reward_tiers(env: Env, campaign_id: u64) -> Vec<BackerRewardTier>;
+    /// Get a cross-chain pledge by ID
+    fn get_cross_chain_pledge(env: Env, pledge_id: u64) -> CrossChainPledge;
 
-    /// Record a backer pledge to a campaign.
-    fn pledge_to_campaign(env: Env, backer: Address, campaign_id: u64, amount: i128);
-
-    fn get_backer_pledge(env: Env, campaign_id: u64, backer: Address) -> i128;
-
-    /// Select a reward tier. Backer's total pledge must meet the tier minimum.
-    fn select_backer_reward_tier(
+    /// Get a cross-chain pledge by source chain and source pledge ID
+    fn get_cross_chain_pledge_by_source(
         env: Env,
-        backer: Address,
-        campaign_id: u64,
-        tier_index: u32,
-    );
+        source_chain: String,
+        source_pledge_id: u64,
+    ) -> CrossChainPledge;
 
-    fn get_backer_selected_tier(env: Env, campaign_id: u64, backer: Address) -> Option<u32>;
-
-    /// Mark a backer's reward as fulfilled. Merchant-only.
-    fn fulfill_backer_reward(
-        env: Env,
-        merchant: Address,
-        campaign_id: u64,
-        backer: Address,
-    );
-
-    fn is_backer_reward_fulfilled(env: Env, campaign_id: u64, backer: Address) -> bool;
-
-    /// Claim a perk from the backer's selected tier after fulfillment.
-    fn claim_backer_perk(env: Env, backer: Address, campaign_id: u64, perk_index: u32);
-
-    fn is_backer_perk_claimed(
-        env: Env,
-        campaign_id: u64,
-        backer: Address,
-        perk_index: u32,
-    ) -> bool;
+    /// Get all cross-chain pledges
+    fn get_all_cross_chain_pledges(env: Env) -> Vec<CrossChainPledge>;
 }

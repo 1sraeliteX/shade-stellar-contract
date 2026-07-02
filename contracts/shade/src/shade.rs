@@ -7,7 +7,8 @@
     upgrade as upgrade_component, history as history_component,
     invoice as invoice_component, merchant as merchant_component, pausable as pausable_component,
     subscription as subscription_component, upgrade as upgrade_component,
-    history as history_component, escrow as escrow_component,
+    history as history_component, cross_chain_pledge as cross_chain_pledge_component,
+    escrow as escrow_component,
 };
 use crate::errors::ContractError;
 use crate::events;

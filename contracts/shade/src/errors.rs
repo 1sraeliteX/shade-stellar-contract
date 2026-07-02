@@ -48,6 +48,7 @@ pub enum ContractError {
     TicketNotFound = 51,
     NotTicketOwner = 52,
     InvalidResalePrice = 54,
+    NotFound = 55,
     // ── Multi-sig massive withdrawal ─────────────────────────────────────────
     /// The withdrawal amount is below the configured threshold; no multi-sig needed.
     BelowMultiSigThreshold = 55,
